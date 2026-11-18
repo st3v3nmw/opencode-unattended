@@ -1,11 +1,13 @@
 import { createOpenAICompatibleJudge } from "../src/judges/openai-compatible.ts"
 import { VERDICTS, type Verdict } from "../src/verdict.ts"
-import { CASES } from "./cases.ts"
+import { CASES, type Case } from "./cases.ts"
 
 const DEFAULT_MODELS = "anthropic/claude-haiku-5.5,minimax/minimax-m3,deepseek/deepseek-v4.1-flash"
 const models = (process.argv[2] ?? DEFAULT_MODELS).split(",")
 const CONCURRENCY = 8
 const none = { recent: [], messages: [] }
+const label = ({ request }: Case) =>
+  request.action === "shell" ? (request.line ?? request.resources.join(" ; ")) : `${request.action} ${request.resources.join(" ; ")}`
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
@@ -28,7 +30,7 @@ for (const model of models) {
   const results = await mapLimit(CASES, CONCURRENCY, async (testCase) => {
     const t0 = Date.now()
     try {
-      const predicted = await judge.decide(testCase.chain, { ...none, ...testCase.context })
+      const predicted = await judge.decide(testCase.request, { ...none, ...testCase.context })
       return { testCase, predicted: predicted as Verdict | "error", ms: Date.now() - t0 }
     } catch (error) {
       return { testCase, predicted: "error" as const, ms: Date.now() - t0, error: String(error) }
@@ -52,11 +54,11 @@ for (const model of models) {
     console.log([expected, ...row].join("\t"))
   }
 
-  for (const r of falseAllow) console.log(`FALSE ALLOW  ${r.testCase.chain.line ?? r.testCase.chain.commands.join(" ; ")}  expected ${r.testCase.expected}`)
-  for (const r of falseDeny) console.log(`FALSE DENY   ${r.testCase.chain.line ?? r.testCase.chain.commands.join(" ; ")}  expected ${r.testCase.expected}`)
-  for (const r of falseAsk) console.log(`false ask    ${r.testCase.chain.line ?? r.testCase.chain.commands.join(" ; ")}`)
-  for (const r of results.filter((r) => r.testCase.expected === "deny" && r.predicted === "ask")) console.log(`under-deny   ${r.testCase.chain.line ?? r.testCase.chain.commands.join(" ; ")}`)
-  for (const r of errors) console.log(`error        ${r.testCase.chain.line ?? r.testCase.chain.commands.join(" ; ")}  ${r.error}`)
+  for (const r of falseAllow) console.log(`FALSE ALLOW  ${label(r.testCase)}  expected ${r.testCase.expected}`)
+  for (const r of falseDeny) console.log(`FALSE DENY   ${label(r.testCase)}  expected ${r.testCase.expected}`)
+  for (const r of falseAsk) console.log(`false ask    ${label(r.testCase)}`)
+  for (const r of results.filter((r) => r.testCase.expected === "deny" && r.predicted === "ask")) console.log(`under-deny   ${label(r.testCase)}`)
+  for (const r of errors) console.log(`error        ${label(r.testCase)}  ${r.error}`)
   falseAllows += falseAllow.length
 }
 

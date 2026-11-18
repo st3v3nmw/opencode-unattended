@@ -1,29 +1,32 @@
 import type { Verdict } from "./verdict.ts"
 
-export type Outcome = Verdict | "error" | "too_long" | "deny_streak"
+/** Why the plugin decided instead of opencode's rules or the judge. `unparsed` means there was nothing to judge. */
+export type Reason = "unconfigured" | "error" | "too_long" | "deny_streak" | "unparsed"
 
-/** A shell chain that was sent to (or short-circuited before) the judge. */
-export interface JudgedEntry {
-  kind: "judged"
+export const REASONS: readonly Reason[] = ["unconfigured", "error", "too_long", "deny_streak", "unparsed"]
+
+/**
+ * One permission evaluation the plugin saw. `by` says who set `effect`: opencode's own rules (`config`), the judge
+ * model (`judge`), or this plugin (`plugin`, always an `ask` with a `reason`).
+ */
+export interface AuditEntry {
   time: number
-  judge: string
   sessionID: string
-  command: string
-  commands: readonly string[]
-  outcome: Outcome
-  /** The effect actually applied after guards. */
-  decision: Verdict
-  latencyMs?: number
+  directory: string
+  action: string
+  resources: readonly string[]
+  effect: Verdict
+  by: "config" | "judge" | "plugin"
+  /** The judge's model, when it was consulted. */
+  judge?: string
+  /** The host of the judge's base URL (`openrouter.ai`, `localhost:11434`), when it was consulted. */
+  provider?: string
+  /** Milliseconds the judge took, when it was consulted. */
+  latency?: number
+  reason?: Reason
+  /** The failure message, for `reason: "error"` only. */
   error?: string
 }
 
-/** An evaluation the plugin saw but did not judge. It supplies the denominator for stats. */
-export interface PassthroughEntry {
-  kind: "passthrough"
-  time: number
-  sessionID: string
-  action: string
-  configEffect: "allow" | "ask"
-}
-
-export type AuditEntry = (JudgedEntry | PassthroughEntry) & { directory?: string; project?: string }
+/** What the approver knows; the plugin adds where the evaluation happened. */
+export type ApproverEntry = Omit<AuditEntry, "directory">

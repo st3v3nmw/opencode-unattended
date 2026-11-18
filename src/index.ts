@@ -1,67 +1,68 @@
-import { appendFileSync, mkdirSync } from "node:fs"
-import { homedir } from "node:os"
-import { dirname, join } from "node:path"
 import { Plugin } from "@opencode/plugin"
 import { createApprover } from "./approver.ts"
-import type { AuditEntry } from "./audit.ts"
-import { createJudge } from "./judge.ts"
+import type { ApproverEntry } from "./audit.ts"
+import { createWriter, prune } from "./auditlog.ts"
+import { createJudge, type Judge } from "./judge.ts"
 import "./judges/openai-compatible.ts"
 import { createMemory } from "./memory.ts"
 import { lastUserMessages } from "./messages.ts"
+import { parseOptions, type Settings } from "./options.ts"
 
-export const DEFAULT_AUDIT_LOG = join(homedir(), ".local", "state", "opencode-unattended", "audit.jsonl")
 const MAX_TRACKED_LINES = 100
-
-function auditWriter(path: string | false): ((entry: AuditEntry) => void) | undefined {
-  if (path === false) return undefined
-  mkdirSync(dirname(path), { recursive: true })
-  return (entry) => {
-    try {
-      appendFileSync(path, JSON.stringify(entry) + "\n")
-    } catch {}
-  }
-}
 
 export default Plugin.define({
   id: "unattended",
   async setup(ctx) {
-    const {
-      judge: judgeName = "openai-compatible",
-      judgeOptions = {},
-      contextSize = 10,
-      userMessages = 5,
-      userMessageChars = 500,
-      maxCommandChars = 8000,
-      denyStreak = 3,
-      auditLog,
-    } = ctx.options
+    let settings: Settings
+    let judge: Judge
+    try {
+      settings = parseOptions(ctx.options)
+      judge = createJudge(settings.apiStyle, settings.judge)
+    } catch (error) {
+      throw new Error(`opencode-unattended: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    const { maxRecentCommands, maxUserMessages, maxUserMessageChars, maxCommandChars, consecutiveDenies, auditDir } = settings
 
-    const write = auditWriter(auditLog === false ? false : (auditLog ?? DEFAULT_AUDIT_LOG))
-    const where = { directory: ctx.location.directory, project: ctx.location.project?.id }
-    const audit = write && ((entry: AuditEntry) => write({ ...entry, ...where }))
+    let audit: ((entry: ApproverEntry) => void) | undefined
+    if (auditDir !== false) {
+      prune(auditDir)
+      const write = createWriter(auditDir)
+      audit = (entry) => write({ ...entry, directory: ctx.location.directory })
+    }
 
-    const memory = createMemory(contextSize)
+    const memory = createMemory(maxRecentCommands)
     const approver = createApprover({
-      judge: createJudge(judgeName, judgeOptions),
+      judge,
       memory,
       audit,
       maxCommandChars,
-      denyStreak,
+      denyStreak: consecutiveDenies,
     })
 
     const lines = new Map<string, string>()
     const registrations = [
       await ctx.permission.hook("evaluate", async (event) => {
         if (event.effect === "deny") return
-        if (event.action !== "shell" || event.effect !== "ask") {
-          audit?.({ kind: "passthrough", time: Date.now(), sessionID: event.sessionID, action: event.action, configEffect: event.effect })
+        if (event.effect !== "ask") {
+          audit?.({
+            time: Date.now(),
+            sessionID: event.sessionID,
+            action: event.action,
+            resources: event.resources,
+            effect: event.effect,
+            by: "config",
+          })
           return
         }
-        const line = event.source ? lines.get(event.source.id) : undefined
+        const line = event.action === "shell" && event.source ? lines.get(event.source.id) : undefined
         const messages = await ctx.session
           .context({ sessionID: event.sessionID })
-          .then((all) => lastUserMessages(all, userMessages, userMessageChars), () => [])
-        const review = await approver.review(event.sessionID, { commands: event.resources, line }, messages)
+          .then((all) => lastUserMessages(all, maxUserMessages, maxUserMessageChars), () => [])
+        const review = await approver.review(
+          event.sessionID,
+          { action: event.action, resources: event.resources, line },
+          messages,
+        )
         if (review.decision === "ask" && !review.message) return
         event.effect = review.decision
         if (review.message) event.message = review.message
