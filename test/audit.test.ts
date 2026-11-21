@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, statSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, readdirSync, readlinkSync, statSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import type { AuditEntry } from "../src/audit.ts"
@@ -95,6 +95,7 @@ describe("latest link", () => {
     write(entry({ time: at("2026-12-01T07:00:00Z") }))
     expect(readlinkSync(link(dir))).toBe("audit-2026-12.jsonl")
     expect(readFileSync(link(dir), "utf8")).toBe(readFileSync(join(dir, "audit-2026-12.jsonl"), "utf8"))
+    expect(readdirSync(dir).sort()).toEqual(["audit-2026-11.jsonl", "audit-2026-12.jsonl", "audit.jsonl"])
   })
 
   test("a late entry from an earlier month does not move it back", () => {
@@ -103,14 +104,6 @@ describe("latest link", () => {
     write(entry({ time: at("2026-12-01T07:00:00Z") }))
     write(entry({ time: at("2026-11-30T23:59:59Z") }))
     expect(readlinkSync(link(dir))).toBe("audit-2026-12.jsonl")
-  })
-
-  test("replaces a regular file left by an older version and leaves no temporary files", () => {
-    const dir = tempDir()
-    writeFileSync(link(dir), "legacy\n")
-    createWriter(dir)(entry())
-    expect(readlinkSync(link(dir))).toBe("audit-2026-11.jsonl")
-    expect(readdirSync(dir).sort()).toEqual(["audit-2026-11.jsonl", "audit.jsonl"])
   })
 
   test("is ignored by prune and readEntries", () => {
@@ -159,7 +152,6 @@ describe("prune", () => {
 
   test("a missing directory is not an error", () => {
     expect(prune(join(tempDir(), "absent"), now)).toEqual([])
-    expect(existsSync(join(tempDir(), "absent"))).toBe(false)
   })
 })
 

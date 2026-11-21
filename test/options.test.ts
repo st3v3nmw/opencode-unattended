@@ -5,15 +5,11 @@ import { parseOptions } from "../src/options.ts"
 const JUDGE = { model: "a/b", baseURL: "https://x.example/v1" }
 
 describe("parseOptions defaults", () => {
-  test("only the judge options are needed; everything else keeps its default", () => {
+  test("only the judge options are needed; everything else has a default", () => {
     expect(parseOptions({ judge: JUDGE })).toEqual({
-      apiStyle: "openai-compatible",
+      apiStyle: "openai",
       judge: JUDGE,
-      maxCommandChars: 8000,
-      maxRecentCommands: 10,
-      maxUserMessages: 5,
-      maxUserMessageChars: 500,
-      consecutiveDenies: 3,
+      escalateAfter: 3,
       auditDir: DEFAULT_AUDIT_DIR,
     })
   })
@@ -30,19 +26,9 @@ describe("parseOptions defaults", () => {
 })
 
 describe("parseOptions overrides", () => {
-  test("every grouped option can be set", () => {
-    const settings = parseOptions({
-      judge: JUDGE,
-      context: { maxCommandChars: 100, maxRecentCommands: 0, maxUserMessages: 0, maxUserMessageChars: 20 },
-      escalation: { consecutiveDenies: 1 },
-      auditDir: "/tmp/audit",
-    })
-    expect(settings).toMatchObject({
-      maxCommandChars: 100,
-      maxRecentCommands: 0,
-      maxUserMessages: 0,
-      maxUserMessageChars: 20,
-      consecutiveDenies: 1,
+  test("every option can be set", () => {
+    expect(parseOptions({ judge: JUDGE, escalateAfter: 5, auditDir: "/tmp/audit" })).toMatchObject({
+      escalateAfter: 5,
       auditDir: "/tmp/audit",
     })
   })
@@ -51,12 +37,8 @@ describe("parseOptions overrides", () => {
     expect(parseOptions({ judge: JUDGE, auditDir: false }).auditDir).toBe(false)
   })
 
-  test("a partial group keeps the other defaults in it", () => {
-    expect(parseOptions({ judge: JUDGE, context: { maxUserMessages: 1 } })).toMatchObject({
-      maxUserMessages: 1,
-      maxUserMessageChars: 500,
-      maxCommandChars: 8000,
-    })
+  test("unknown options are ignored, so options from earlier versions do not break a config", () => {
+    expect(parseOptions({ judge: JUDGE, context: { maxUserMessages: 2 } })).toEqual(parseOptions({ judge: JUDGE }))
   })
 })
 
@@ -64,34 +46,12 @@ describe("parseOptions rejections", () => {
   const fails = (options: Record<string, unknown>, message: string) =>
     expect(() => parseOptions(options)).toThrow(message)
 
-  test("old flat names are unknown", () => {
-    fails({ judge: JUDGE, denyStreak: 2 }, "unknown options: denyStreak")
-    fails({ judge: JUDGE, judgeOptions: {} }, "unknown options: judgeOptions")
-    fails({ judge: JUDGE, userMessageChars: 5 }, "unknown options: userMessageChars")
-    fails({ judge: JUDGE, auditLog: "/tmp/audit.jsonl" }, "unknown options: auditLog")
-  })
-
-  test("typos inside a group are named with their path", () => {
-    fails({ judge: JUDGE, context: { maxUserMessage: 2 } }, "unknown options: context.maxUserMessage")
-    fails({ judge: JUDGE, escalation: { denyStreak: 2 } }, "unknown options: escalation.denyStreak")
-  })
-
   test("a string judge from the old format gets a clear message", () => {
-    fails({ judge: "openai-compatible" }, "judge must be an object")
+    fails({ judge: "openai" }, "judge must be an object")
   })
 
-  test("a group that is not a plain object is rejected", () => {
-    fails({ judge: JUDGE, context: [] }, "context must be an object")
-  })
-
-  test.each([[0], ["3"]])("maxCommandChars rejects %p", (value) => {
-    fails({ judge: JUDGE, context: { maxCommandChars: value } }, "context.maxCommandChars must be an integer of at least 1")
-  })
-
-  test("zero is allowed for counts but not for consecutiveDenies", () => {
-    expect(() => parseOptions({ judge: JUDGE, context: { maxRecentCommands: 0, maxUserMessages: 0 } })).not.toThrow()
-    fails({ judge: JUDGE, escalation: { consecutiveDenies: 0 } }, "escalation.consecutiveDenies must be an integer of at least 1")
-    fails({ judge: JUDGE, context: { maxRecentCommands: -1 } }, "context.maxRecentCommands must be an integer of at least 0")
+  test.each([[0], [1.5], ["3"]])("escalateAfter rejects %p", (value) => {
+    fails({ judge: JUDGE, escalateAfter: value }, "escalateAfter must be an integer of at least 1")
   })
 
   test.each([[true], [""]])("auditDir rejects %p", (value) => {

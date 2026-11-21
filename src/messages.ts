@@ -1,4 +1,4 @@
-export function clip(text: string, maxChars: number): string {
+export function truncate(text: string, maxChars: number): string {
   return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text
 }
 
@@ -11,5 +11,5 @@ export function lastUserMessages(
   return messages
     .flatMap((m) => (m.type === "user" && typeof m.text === "string" && m.text.trim() ? [m.text.trim()] : []))
     .slice(-count)
-    .map((text) => clip(text, maxChars))
+    .map((text) => truncate(text, maxChars))
 }

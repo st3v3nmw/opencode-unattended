@@ -45,7 +45,7 @@ function stripUrlDetail(text: string): string {
   }
 }
 
-const clip = (text: string) => (text.length > MAX_RESOURCE_CHARS ? text.slice(0, MAX_RESOURCE_CHARS) + "…" : text)
+const truncate = (text: string) => (text.length > MAX_RESOURCE_CHARS ? text.slice(0, MAX_RESOURCE_CHARS) + "…" : text)
 
 /**
  * Shortens what the log keeps: home becomes `~`, URLs lose query strings, long commands are cut. Entries your config
@@ -55,8 +55,8 @@ export function sanitize(entry: AuditEntry): AuditEntry {
   const resources =
     entry.by === "config"
       ? []
-      : entry.resources.map((r) => clip(tildify(entry.action === "webfetch" ? stripUrlDetail(r) : r)))
-  return { ...entry, directory: tildify(entry.directory), resources }
+      : entry.resources.map((r) => truncate(tildify(entry.action === "webfetch" ? stripUrlDetail(r) : r)))
+  return { ...entry, directory: tildify(entry.directory), resources, ...(entry.why ? { why: tildify(entry.why) } : {}) }
 }
 
 export const LATEST_LINK = "audit.jsonl"

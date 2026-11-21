@@ -1,14 +1,16 @@
 import { Plugin } from "@opencode/plugin"
 import { createApprover } from "./approver.ts"
 import type { ApproverEntry } from "./audit.ts"
-import { createWriter, prune } from "./auditlog.ts"
-import { createJudge, type Judge } from "./judge.ts"
-import "./judges/openai-compatible.ts"
-import { createMemory } from "./memory.ts"
+import { createWriter, prune, readEntries } from "./auditlog.ts"
+import { recentCommands } from "./history.ts"
+import { createJudge, type Judge, type Request } from "./judge.ts"
+import "./judges/openai.ts"
+import { recentToolCalls } from "./calls.ts"
+import { MAX_TRACKED, RECENT_TOOL_CALLS, RECENT_TOOL_CALL_CHARS, USER_MESSAGES, USER_MESSAGE_CHARS } from "./limits.ts"
 import { lastUserMessages } from "./messages.ts"
 import { parseOptions, type Settings } from "./options.ts"
-
-const MAX_TRACKED_LINES = 100
+import { SUGGEST_SKILL } from "./suggest-skill.ts"
+import { suggestTool } from "./suggest-tool.ts"
 
 export default Plugin.define({
   id: "unattended",
@@ -21,7 +23,7 @@ export default Plugin.define({
     } catch (error) {
       throw new Error(`opencode-unattended: ${error instanceof Error ? error.message : String(error)}`)
     }
-    const { maxRecentCommands, maxUserMessages, maxUserMessageChars, maxCommandChars, consecutiveDenies, auditDir } = settings
+    const { escalateAfter, auditDir } = settings
 
     let audit: ((entry: ApproverEntry) => void) | undefined
     if (auditDir !== false) {
@@ -30,17 +32,20 @@ export default Plugin.define({
       audit = (entry) => write({ ...entry, directory: ctx.location.directory })
     }
 
-    const memory = createMemory(maxRecentCommands)
     const approver = createApprover({
       judge,
-      memory,
       audit,
-      maxCommandChars,
-      denyStreak: consecutiveDenies,
+      consecutiveLimit: escalateAfter,
+      denyLimit: escalateAfter,
     })
 
     const lines = new Map<string, string>()
-    const registrations = [
+    const asked = new Map<string, { sessionID: string; request: Request }>()
+    const remember = <T>(map: Map<string, T>, id: string, value: T) => {
+      map.set(id, value)
+      if (map.size > MAX_TRACKED) map.delete(map.keys().next().value!)
+    }
+    const registrations: { dispose: () => Promise<void> }[] = [
       await ctx.permission.hook("evaluate", async (event) => {
         if (event.effect === "deny") return
         if (event.effect !== "ask") {
@@ -55,31 +60,43 @@ export default Plugin.define({
           return
         }
         const line = event.action === "shell" && event.source ? lines.get(event.source.id) : undefined
-        const messages = await ctx.session
-          .context({ sessionID: event.sessionID })
-          .then((all) => lastUserMessages(all, maxUserMessages, maxUserMessageChars), () => [])
-        const review = await approver.review(
-          event.sessionID,
-          { action: event.action, resources: event.resources, line },
-          messages,
+        const context = await ctx.session.context({ sessionID: event.sessionID }).then(
+          (all) => ({
+            messages: lastUserMessages(all, USER_MESSAGES, USER_MESSAGE_CHARS),
+            recent: recentToolCalls(all, event.source?.id, RECENT_TOOL_CALLS, RECENT_TOOL_CALL_CHARS),
+          }),
+          () => ({ messages: [], recent: [] }),
         )
+        const review = await approver.review(event.sessionID, { action: event.action, resources: event.resources, line }, context)
+        if (review.decision === "ask" && event.source) {
+          remember(asked, event.source.id, { sessionID: event.sessionID, request: { action: event.action, resources: event.resources, line } })
+        }
         if (review.decision === "ask" && !review.message) return
         event.effect = review.decision
         if (review.message) event.message = review.message
       }),
       await ctx.tool.hook("execute.before", (event) => {
+        const approved = asked.get(event.id)
+        if (approved) {
+          asked.delete(event.id)
+          approver.forget(approved.sessionID, approved.request)
+        }
         const command = (event.input as { command?: unknown } | null)?.command
         if (event.tool !== "shell" || typeof command !== "string") return
-        lines.set(event.id, command)
-        if (lines.size > MAX_TRACKED_LINES) lines.delete(lines.keys().next().value!)
-      }),
-      await ctx.tool.hook("execute.after", (event) => {
-        const command = (event.input as { command?: unknown } | null)?.command
-        if (event.tool === "shell" && typeof command === "string") {
-          memory.recordRun(event.sessionID, command, event.status === "completed" ? "completed" : "error")
-        }
+        remember(lines, event.id, command)
       }),
     ]
+
+    if (auditDir !== false) {
+      const tool = suggestTool({
+        entries: (since) => readEntries(auditDir, { since }),
+        commands: (since) => recentCommands(ctx.session, since),
+      })
+      registrations.push(
+        await ctx.tool.transform((editor) => editor.add(tool)),
+        await ctx.skill.transform((editor) => editor.add(SUGGEST_SKILL as Parameters<typeof editor.add>[0])),
+      )
+    }
 
     return async () => {
       await Promise.all(registrations.map((r) => r.dispose()))

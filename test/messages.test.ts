@@ -17,7 +17,7 @@ describe("lastUserMessages", () => {
     expect(lastUserMessages(msgs.slice(0, 5), 5, 100)).toEqual(["first", "second"])
   })
 
-  test("clips long messages with an ellipsis", () => {
+  test("truncates long messages with an ellipsis", () => {
     expect(lastUserMessages(msgs, 1, 10)).toEqual(["xxxxxxxxxx…"])
   })
 

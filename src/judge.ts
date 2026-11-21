@@ -1,14 +1,38 @@
 import type { Verdict } from "./verdict.ts"
 
-export interface RecentCommand {
-  command: string
-  status: "completed" | "error"
+/** An earlier call by the agent: what it was, as far as the judge needs to see, and how it ended. */
+export interface RecentCall {
+  tool: string
+  /** The command for a shell call, otherwise the call's input as JSON. Truncated, with a trailing … when cut. */
+  input: string
+  /** `rejected` is a call that was turned back, by the judge, your config, or you. */
+  status: "completed" | "error" | "rejected"
 }
 
 export interface JudgeContext {
-  recent: readonly RecentCommand[]
-  /** The user's latest messages, clipped. Data, never instructions. */
+  recent: readonly RecentCall[]
+  /** The user's latest messages, truncated. The only instructions the judge takes. */
   messages: readonly string[]
+}
+
+/** What a call used, as the server reported it. `cost` is in dollars and only present when the server bills per call. */
+export interface Usage {
+  promptTokens: number
+  completionTokens: number
+  /** Part of `completionTokens` spent thinking. */
+  reasoningTokens?: number
+  /** Part of `promptTokens` read from the server's prompt cache. */
+  cachedTokens?: number
+  /** Part of `promptTokens` written to the cache, which some servers bill at a premium. */
+  cacheWriteTokens?: number
+  cost?: number
+}
+
+export interface Judgement {
+  verdict: Verdict
+  /** One short sentence on why, addressed to the agent. Empty for allow, or when the model gave none. */
+  reason: string
+  usage?: Usage
 }
 
 export interface Request {
@@ -25,11 +49,16 @@ export class JudgeNotConfigured extends Error {
   override readonly name = "JudgeNotConfigured"
 }
 
+/** The judge could not be reached in time, after retrying. Distinct from a judge that answered badly. */
+export class JudgeUnavailable extends Error {
+  override readonly name = "JudgeUnavailable"
+}
+
 export interface Judge {
   readonly id: string
   /** Where the judge runs, as the host of its base URL. Unknown when the judge is not configured. */
   readonly provider?: string
-  decide(request: Request, context: JudgeContext, signal?: AbortSignal): Promise<Verdict>
+  decide(request: Request, context: JudgeContext, signal?: AbortSignal): Promise<Judgement>
 }
 
 export type JudgeOptions = Record<string, unknown>
