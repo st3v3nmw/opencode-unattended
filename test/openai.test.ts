@@ -8,14 +8,12 @@ import {
   parseJudgement,
 } from "../src/judges/openai.ts"
 import { SYSTEM_PROMPT } from "../src/prompt.ts"
-import { JudgeNotConfigured, JudgeUnavailable, createJudge } from "../src/judge.ts"
+import { JudgeUnavailable, createJudge } from "../src/judge.ts"
 
-const MODEL = "OPENCODE_UNATTENDED_MODEL"
-const URL = "OPENCODE_UNATTENDED_API_URL"
 const KEY = "OPENCODE_UNATTENDED_API_KEY"
 
 type Env = Record<string, string | undefined>
-const FULL_ENV: Env = { [MODEL]: "m", [URL]: "https://x.example/v1", [KEY]: "k" }
+const FULL_ENV: Env = { [KEY]: "k" }
 
 const reply = (content: unknown, status = 200) =>
   new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status })
@@ -24,7 +22,7 @@ const judgeWith = (
   fetchImpl: typeof fetch,
   env: Env = FULL_ENV,
   extra: Partial<Parameters<typeof createOpenAIJudge>[0]> = {},
-) => createOpenAIJudge({ env, fetch: fetchImpl, ...extra })
+) => createOpenAIJudge({ model: "m", baseURL: "https://x.example/v1", env, fetch: fetchImpl, ...extra })
 
 const none = { recent: [], messages: [] }
 
@@ -125,7 +123,7 @@ describe("openai judge", () => {
 
   test.each([
     ["by default", undefined],
-    ["when disabled, whatever the ttl", { promptCache: { enabled: false, ttl: "1h" as const } }],
+    ["when disabled, whatever the ttl", { promptCache: { enabled: false, ttl: "1h" } }],
   ])("prompt caching is off %s: a plain system prompt and no session id", async (_label, extra) => {
     const sent = await sentWith(extra)
     expect(typeof sent.messages[0]!.content).toBe("string")
@@ -133,16 +131,14 @@ describe("openai judge", () => {
     expect(JSON.stringify(sent)).not.toContain("cache_control")
   })
 
-  test("with promptCache the system prompt carries a cache breakpoint, a 5m ttl sends it bare, and calls share a session id", async () => {
-    const hour = await sentWith({ promptCache: { enabled: true, ttl: "1h" } })
-    expect(hour.session_id).toBe(CACHE_SESSION_ID)
-    expect(hour.messages[0]).toEqual({
+  test("with promptCache the system prompt carries a cache breakpoint with the ttl as given, and calls share a session id", async () => {
+    const sent = await sentWith({ promptCache: { enabled: true, ttl: "30m" } })
+    expect(sent.session_id).toBe(CACHE_SESSION_ID)
+    expect(sent.messages[0]).toEqual({
       role: "system",
-      content: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral", ttl: "1h" } }],
+      content: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral", ttl: "30m" } }],
     })
-    expect(typeof hour.messages[1]!.content).toBe("string")
-    const five = await sentWith({ promptCache: { enabled: true, ttl: "5m" } })
-    expect(five.messages[0]!.content[0].cache_control).toEqual({ type: "ephemeral" })
+    expect(typeof sent.messages[1]!.content).toBe("string")
   })
 
   test("reports cache reads and writes from the usage details", async () => {
@@ -170,58 +166,19 @@ describe("openai judge", () => {
   })
 })
 
-describe("required configuration", () => {
-  const decideWith = async (env: Env, extra = {}) => {
-    let called = false
-    const spy = (async () => {
-      called = true
-      return reply('{"decision":"allow"}')
-    }) as unknown as typeof fetch
-    const result = await judgeWith(spy, env, extra).decide({ action: "shell", resources: ["ls"] }, none).then(
-      () => "ok",
-      (error: Error) => error.message,
-    )
-    return { result, called }
-  }
-
-  test("creating a judge with nothing configured does not throw, so the plugin still loads", () => {
-    expect(() => createOpenAIJudge({ env: {} })).not.toThrow()
-  })
-
-  test.each([[MODEL], [URL]])("a missing %s fails the call naming it, without touching the network", async (missing) => {
-    const env = { ...FULL_ENV, [missing]: undefined }
-    const { result, called } = await decideWith(env)
-    expect(result).toBe(`judge not configured: set ${missing}`)
-    expect(called).toBe(false)
-  })
-
-  test("empty and whitespace-only values count as missing", async () => {
-    const { result } = await decideWith({ [MODEL]: " ", [URL]: "" })
-    expect(result).toBe(`judge not configured: set ${MODEL}, ${URL}`)
-  })
-
-})
-
 describe("model and endpoint selection", () => {
-  const requestSeenBy = async (env: Env, extra = {}) => {
+  test("the options choose the model and the endpoint", async () => {
     const seen = { url: "", model: "" }
     const spy = (async (u: string, init: RequestInit) => {
       seen.url = u
       seen.model = JSON.parse(init.body as string).model
       return reply('{"decision":"allow"}')
     }) as unknown as typeof fetch
-    await judgeWith(spy, env, extra).decide({ action: "shell", resources: ["ls"] }, none)
-    return seen
-  }
-
-  test("the variables choose the model and the endpoint", async () => {
-    const seen = await requestSeenBy({ [MODEL]: "minimax/minimax-m3", [URL]: "http://localhost:11434/v1/", [KEY]: "k" })
-    expect(seen).toEqual({ url: "http://localhost:11434/v1/chat/completions", model: "minimax/minimax-m3" })
-  })
-
-  test("explicit options beat the variables", async () => {
-    const seen = await requestSeenBy(FULL_ENV, { model: "c/d", baseURL: "http://opt.example/v1" })
-    expect(seen).toEqual({ url: "http://opt.example/v1/chat/completions", model: "c/d" })
+    await judgeWith(spy, FULL_ENV, { model: "c/d", baseURL: "http://localhost:11434/v1/" }).decide(
+      { action: "shell", resources: ["ls"] },
+      none,
+    )
+    expect(seen).toEqual({ url: "http://localhost:11434/v1/chat/completions", model: "c/d" })
   })
 
   test.each([
@@ -266,19 +223,19 @@ describe("judge options from config", () => {
 
   test("promptCache is an object: enabled by being present, with a 1h ttl unless told otherwise", () => {
     expect(judgeConfig({ ...FULL, promptCache: {} })).toEqual({ ...FULL, promptCache: { enabled: true, ttl: "1h" } })
-    expect(judgeConfig({ ...FULL, promptCache: { ttl: "5m" } })).toEqual({ ...FULL, promptCache: { enabled: true, ttl: "5m" } })
+    expect(judgeConfig({ ...FULL, promptCache: { ttl: "30m" } })).toEqual({ ...FULL, promptCache: { enabled: true, ttl: "30m" } })
     expect(judgeConfig({ ...FULL, promptCache: { enabled: false } })).toEqual({ ...FULL, promptCache: { enabled: false, ttl: "1h" } })
   })
 
-  test("promptCache rejects anything but an object, a boolean enabled and a 5m or 1h ttl", () => {
+  test("promptCache rejects anything but an object, a boolean enabled and a duration ttl", () => {
     for (const value of [true, false, "1h", 1, null, []]) {
       expect(() => judgeConfig({ ...FULL, promptCache: value })).toThrow("judge.promptCache must be an object")
     }
     for (const enabled of ["yes", 1, null]) {
       expect(() => judgeConfig({ ...FULL, promptCache: { enabled } })).toThrow("judge.promptCache.enabled must be true or false")
     }
-    for (const ttl of ["30m", "12h", 3600, "", null]) {
-      expect(() => judgeConfig({ ...FULL, promptCache: { ttl } })).toThrow('judge.promptCache.ttl must be "5m" or "1h"')
+    for (const ttl of ["soon", "1.5h", 3600, "", null]) {
+      expect(() => judgeConfig({ ...FULL, promptCache: { ttl } })).toThrow('judge.promptCache.ttl must be a duration like "5m" or "1h"')
     }
   })
 
@@ -314,15 +271,6 @@ describe("judge options from config", () => {
     }) as unknown as typeof fetch
     await judgeWith(spy, {}, FULL).decide({ action: "shell", resources: ["ls"] }, none)
     expect(headers).toEqual({ "content-type": "application/json" })
-  })
-
-  test("a missing setting throws JudgeNotConfigured, but an HTTP failure does not", async () => {
-    const unconfigured = judgeWith((async () => reply("x")) as unknown as typeof fetch, {})
-    await expect(unconfigured.decide({ action: "shell", resources: ["ls"] }, none)).rejects.toBeInstanceOf(JudgeNotConfigured)
-    const down = judgeWith((async () => reply("x", 400)) as unknown as typeof fetch)
-    const error = await down.decide({ action: "shell", resources: ["ls"] }, none).catch((e: unknown) => e)
-    expect(error).toBeInstanceOf(Error)
-    expect(error).not.toBeInstanceOf(JudgeNotConfigured)
   })
 
   test.each([

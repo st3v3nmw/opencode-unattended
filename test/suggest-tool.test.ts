@@ -35,8 +35,7 @@ describe("suggest tool", () => {
     expect(tool.name).toBe(SUGGEST_TOOL)
     const { content } = await tool.execute({ days: 7, rules: [] })
     expect(asked).toEqual([NOW - 7 * DAY])
-    expect(content).toContain("Last 7 days: 3 shell requests went to the judge, and 2 shell commands ran")
-    expect(content).toContain("make lint *\n  allowed by the judge 3 times in 2 sessions; ran 1 time")
+    expect(content).toMatch(/^PATTERN +% OF JUDGED +% OF SESSIONS +EXAMPLE\nmake lint \* +100\.0% +100\.0% +make lint/)
   })
 
   test("the rules it is given decide what counts as already allowed", async () => {
@@ -53,8 +52,7 @@ describe("suggest tool", () => {
       resolves: () => true,
     })
     const open = await tool.execute({ days: 7, rules: [{ resource: "make *", effect: "allow" }] })
-    expect(open.content).toContain("It also reviewed 3 webfetch requests.")
-    expect(open.content).toContain("[webfetch]\nhttps://docs.example.com/*")
+    expect(open.content).toMatch(/^\[webfetch\]\nPATTERN .*\nhttps:\/\/docs\.example\.com\/\*/)
     const covered = await tool.execute({ days: 7, rules: [{ action: "webfetch", resource: "https://docs.example.com/*", effect: "allow" }] })
     expect(covered.content).toContain("No pattern qualifies")
   })

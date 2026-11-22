@@ -110,39 +110,14 @@ describe("suggest", () => {
       expect(suggest(entries, [], [])).toMatchObject([{ pattern: "ls *", allows: 3 }])
     })
 
-    test("a single repeated command is widened past its flags, and the literal form is offered as the narrower one", () => {
-      const [candidate] = suggest(allowed("du -sh src"), [], [])
-      expect(candidate).toMatchObject({ pattern: "du *", alternative: { pattern: "du -sh src *", kind: "narrower" } })
-      expect(candidate!.note).toBeUndefined()
-    })
-
-    test("no narrower form is offered when there were no flags to drop", () => {
-      expect(suggest(allowed("cd app"), [], [])[0]!.alternative).toBeUndefined()
+    test("a single repeated command is widened past its flags", () => {
+      expect(patterns(allowed("du -sh src"))).toEqual(["du *"])
+      expect(patterns(allowed("gofmt -s -l pkg"))).toEqual(["gofmt *"])
     })
 
     test("a tool with subcommands keeps its flags, because they pick what the command does", () => {
       expect(patterns(allowed("git branch --contains abc"))).toEqual(["git branch --contains *"])
       expect(patterns(allowed("snap logs clef-flash -n 30"))).toEqual(["snap logs clef-flash *"])
-    })
-
-    test("a flag that rewrites files in place keeps the narrower rule first until the judge has allowed it", () => {
-      const [candidate] = suggest(allowed("gofmt -s -l pkg"), [], [])
-      expect(candidate).toMatchObject({ pattern: "gofmt -s -l *", alternative: { pattern: "gofmt *", kind: "wider" } })
-      expect(candidate!.note).toContain("-w")
-    })
-
-    test("the wide rule leads once the judge has allowed the in-place flag too", () => {
-      const entries = [...allowed("gofmt -s -l pkg", 2), ...allowed("gofmt -w pkg", 1)]
-      const [candidate] = suggest(entries, [], [])
-      expect(candidate).toMatchObject({ pattern: "gofmt *" })
-      expect(candidate).not.toHaveProperty("alternative")
-      expect(candidate).not.toHaveProperty("note")
-    })
-
-    test("with no narrower form to lead with, the wide rule is proposed with a note about the flag", () => {
-      const [candidate] = suggest(allowed("gofmt a.go"), [], [])
-      expect(candidate).toMatchObject({ pattern: "gofmt *" })
-      expect(candidate!.note).toContain("-w")
     })
 
     test("when the judge asked about the command with other flags, only the narrower rule survives", () => {
@@ -206,39 +181,40 @@ describe("shorten", () => {
 })
 
 describe("formatSuggestions", () => {
-  const scope = { days: 7, judged: 12, runs: 40 }
+  const scope = { reviewed: { shell: 12 }, sessions: { shell: 4 } }
+  const cells = (text: string) => text.split("\n").map((line) => line.trim().split(/\s{2,}/))
+
+  test("lists each candidate as a row: its share of the judge's requests and of sessions, and an example", () => {
+    const text = formatSuggestions(suggest(allowed("make lint"), ["make lint"], []), scope)
+    expect(cells(text)).toEqual([
+      ["PATTERN", "% OF JUDGED", "% OF SESSIONS", "EXAMPLE"],
+      ["make lint *", "25.0%", "50.0%", "make lint"],
+    ])
+  })
+
+  test("a share with nothing to divide by is a dash, and one never passes 100%", () => {
+    const candidates = suggest(allowed("make lint"), [], [])
+    expect(cells(formatSuggestions(candidates, { reviewed: {}, sessions: {} }))[1]).toEqual(["make lint *", "-", "-", "make lint"])
+    expect(cells(formatSuggestions(candidates, { reviewed: { shell: 2 }, sessions: { shell: 1 } }))[1]).toEqual(["make lint *", "100.0%", "100.0%", "make lint"])
+  })
+
+  test("prints a note under its row", () => {
+    const [candidate] = suggest(allowed("make lint"), [], [])
+    const text = formatSuggestions([{ ...candidate!, note: "Check this." }], scope)
+    expect(text.split("\n")[2]).toBe("  note: Check this.")
+  })
 
   test("names what it skipped for not being on PATH", () => {
-    expect(formatSuggestions([], { ...scope, skipped: ["g", "p"] })).toContain(
-      "40 shell commands ran in recent sessions.\nSkipped 2 names not found on PATH and not a shell builtin: g, p.\n\nNo pattern qualifies",
+    expect(formatSuggestions([], { ...scope, skipped: ["g", "p"] })).toBe(
+      "No pattern qualifies: none was allowed by the judge at least 3 times without an ask, a deny, or a risky variant.\nSkipped 2 names not found on PATH and not a shell builtin: g, p.",
     )
-  })
-
-  test("lists each candidate with its evidence", () => {
-    const text = formatSuggestions(suggest(allowed("make lint"), ["make lint"], []), scope)
-    expect(text).toBe(
-      [
-        "Last 7 days: 12 shell requests went to the judge, and 40 shell commands ran in recent sessions.",
-        "",
-        "These are patterns the judge allowed, not recommendations. A rule covers every command it matches, not only the ones the judge saw, so review each before it goes in a config.",
-        "",
-        "make lint *",
-        "  allowed by the judge 3 times in 2 sessions; ran 1 time in recent sessions",
-        "  e.g. `make lint`",
-      ].join("\n"),
-    )
-  })
-
-  test("shows the other width and any note under the candidate", () => {
-    const text = formatSuggestions(suggest(allowed("gofmt -s -l pkg"), [], []), scope)
-    expect(text).toContain("gofmt -s -l *\n  allowed by the judge 3 times in 2 sessions; ran 0 times in recent sessions\n  e.g. `gofmt -s -l pkg`\n  wider: gofmt *\n  note: ")
-    expect(formatSuggestions(suggest(allowed("du -sh src"), [], []), scope)).toContain("du *\n")
-    expect(formatSuggestions(suggest(allowed("du -sh src"), [], []), scope)).toContain("  narrower: du -sh src *")
+    const text = formatSuggestions(suggest(allowed("make lint"), [], []), { ...scope, skipped: ["g"] })
+    expect(text.endsWith("\n\nSkipped 1 name not found on PATH and not a shell builtin: g.")).toBe(true)
   })
 
   test("says so when nothing qualifies", () => {
-    expect(formatSuggestions([], { days: 1, judged: 1, runs: 1 })).toBe(
-      "Last 1 day: 1 shell request went to the judge, and 1 shell command ran in recent sessions.\n\nNo pattern qualifies: none was allowed by the judge at least 3 times without an ask, a deny, or a risky variant.",
+    expect(formatSuggestions([], scope)).toBe(
+      "No pattern qualifies: none was allowed by the judge at least 3 times without an ask, a deny, or a risky variant.",
     )
   })
 })

@@ -1,14 +1,14 @@
-import { DEFAULT_AUDIT_DIR, readEntries } from "../src/auditlog.ts"
+import { DEFAULT_DATA_DIR, readEntries } from "../src/auditlog.ts"
 import { byJudge, formatActions, formatJudges, formatMonthly, monthly, parseWhen, summarize, top } from "../src/stats.ts"
 
-const USAGE = `usage: opencode-unattended stats [--since 180d] [--until DATE] [--project TEXT] [--top ask|deny|error] [--limit N] [--dir PATH]
+const USAGE = `usage: opencode-unattended stats [--since 180d] [--until DATE] [--project TEXT] [--top ask|deny|error] [--limit N] [--data-dir PATH]
 
   --since    window start: 30d, 4w, 12h, or a date like 2026-11-01 (default 180d)
   --until    window end, same forms (default now)
   --project  only entries whose directory contains TEXT
   --top      also list the most frequent asks, denies, or judge errors
   --limit    show the N busiest actions and models and fold the rest into "others" (default 8, 0 shows all)
-  --dir      audit directory (default ${DEFAULT_AUDIT_DIR})`
+  --data-dir data directory (default ${DEFAULT_DATA_DIR})`
 
 const args = process.argv.slice(2)
 if (args.includes("--help") || args.includes("-h")) {
@@ -22,7 +22,7 @@ const option = (name: string) => {
 
 try {
   const now = Date.now()
-  const dir = option("--dir") ?? DEFAULT_AUDIT_DIR
+  const dir = option("--data-dir") ?? DEFAULT_DATA_DIR
   const project = option("--project")
   const kind = option("--top")
   if (kind !== undefined && kind !== "ask" && kind !== "deny" && kind !== "error") {

@@ -23,12 +23,12 @@ export default Plugin.define({
     } catch (error) {
       throw new Error(`opencode-unattended: ${error instanceof Error ? error.message : String(error)}`)
     }
-    const { escalateAfter, auditDir } = settings
+    const { escalateAfter, dataDir, auditLog } = settings
 
     let audit: ((entry: ApproverEntry) => void) | undefined
-    if (auditDir !== false) {
-      prune(auditDir)
-      const write = createWriter(auditDir)
+    if (auditLog.enabled) {
+      prune(dataDir)
+      const write = createWriter(dataDir)
       audit = (entry) => write({ ...entry, directory: ctx.location.directory })
     }
 
@@ -87,9 +87,9 @@ export default Plugin.define({
       }),
     ]
 
-    if (auditDir !== false) {
+    if (auditLog.enabled) {
       const tool = suggestTool({
-        entries: (since) => readEntries(auditDir, { since }),
+        entries: (since) => readEntries(dataDir, { since }),
         commands: (since) => recentCommands(ctx.session, since),
       })
       registrations.push(

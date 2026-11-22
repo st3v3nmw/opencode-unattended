@@ -1,6 +1,5 @@
 import { parseDuration } from "../duration.ts"
 import {
-  JudgeNotConfigured,
   JudgeUnavailable,
   registerJudge,
   type Judge,
@@ -19,14 +18,12 @@ import {
 import { SYSTEM_PROMPT, renderRequest } from "../prompt.ts"
 import { VERDICTS, isVerdict } from "../verdict.ts"
 
-const CACHE_TTLS = ["5m", "1h"] as const
-export type PromptCacheTtl = (typeof CACHE_TTLS)[number]
-export const DEFAULT_CACHE_TTL: PromptCacheTtl = "1h"
+export const DEFAULT_CACHE_TTL = "1h"
 
 export interface PromptCache {
   enabled: boolean
-  /** How long the provider keeps the system prompt cached. Only Anthropic models, through OpenRouter, act on it. */
-  ttl: PromptCacheTtl
+  /** A duration such as `5m` or `1h`, sent as is. The provider decides which values it accepts. */
+  ttl: string
 }
 
 export interface OpenAIOptions {
@@ -116,8 +113,6 @@ export function hostOf(baseURL: string): string | undefined {
   }
 }
 
-export const MODEL_ENV = "OPENCODE_UNATTENDED_MODEL"
-export const API_URL_ENV = "OPENCODE_UNATTENDED_API_URL"
 export const API_KEY_ENV = "OPENCODE_UNATTENDED_API_KEY"
 
 /** A Retry-After value, in seconds or as an HTTP date, as milliseconds from now. */
@@ -149,8 +144,8 @@ function promptCacheConfig(value: unknown): PromptCache {
   }
   const { enabled = true, ttl = DEFAULT_CACHE_TTL } = value as Record<string, unknown>
   if (typeof enabled !== "boolean") throw new Error("judge.promptCache.enabled must be true or false")
-  if (!CACHE_TTLS.includes(ttl as PromptCacheTtl)) throw new Error(`judge.promptCache.ttl must be ${CACHE_TTLS.map((t) => `"${t}"`).join(" or ")}`)
-  return { enabled, ttl: ttl as PromptCacheTtl }
+  if (typeof ttl !== "string" || !parseDuration(ttl)) throw new Error('judge.promptCache.ttl must be a duration like "5m" or "1h"')
+  return { enabled, ttl: ttl.trim() }
 }
 
 /**
@@ -168,6 +163,7 @@ export function judgeConfig(options: JudgeOptions): JudgeConfig {
     if (typeof value !== "string" || !value.trim()) throw new Error(`judge.${key} must be a non-empty string`)
     config[key] = value.trim()
   }
+  // TODO: remove this check once configs have moved from timeoutMs to timeout.
   if (options.timeoutMs !== undefined) throw new Error('judge.timeoutMs is now judge.timeout, a duration like "15s"')
   if (options.timeout !== undefined) {
     const ms = typeof options.timeout === "string" ? parseDuration(options.timeout) : undefined
@@ -178,11 +174,9 @@ export function judgeConfig(options: JudgeOptions): JudgeConfig {
   return config
 }
 
-export function createOpenAIJudge(partial: Partial<OpenAIOptions> = {}): Judge {
+export function createOpenAIJudge(partial: Pick<OpenAIOptions, ConfigKey> & Partial<OpenAIOptions>): Judge {
   const env = partial.env ?? process.env
   const options: OpenAIOptions = {
-    model: env[MODEL_ENV] || "",
-    baseURL: env[API_URL_ENV] || "",
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxTokens: DEFAULT_MAX_TOKENS,
     promptCache: { enabled: false, ttl: DEFAULT_CACHE_TTL },
@@ -194,12 +188,10 @@ export function createOpenAIJudge(partial: Partial<OpenAIOptions> = {}): Judge {
   }
 
   return {
-    id: options.model || "unconfigured",
+    id: options.model,
     provider: hostOf(options.baseURL),
     async decide(request, context, signal) {
       const apiKey = options.env[API_KEY_ENV]?.trim()
-      const missing = [!options.model.trim() && MODEL_ENV, !options.baseURL.trim() && API_URL_ENV].filter(Boolean)
-      if (missing.length > 0) throw new JudgeNotConfigured(`judge not configured: set ${missing.join(", ")}`)
 
       const { enabled: cached, ttl } = options.promptCache
       const payload = JSON.stringify({
@@ -211,7 +203,7 @@ export function createOpenAIJudge(partial: Partial<OpenAIOptions> = {}): Judge {
           {
             role: "system",
             content: cached
-              ? [{ type: "text", text: SYSTEM_PROMPT, cache_control: ttl === "5m" ? { type: "ephemeral" } : { type: "ephemeral", ttl } }]
+              ? [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral", ttl } }]
               : SYSTEM_PROMPT,
           },
           { role: "user", content: renderRequest(request, context) },

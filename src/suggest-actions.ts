@@ -2,7 +2,7 @@ import type { AuditEntry } from "./audit.ts"
 import { isSpecific, lastMatch, matches, rulesFor, type ActionRule, type ShellRule } from "./rules.ts"
 import { MAX_EXAMPLES, MIN_USES, MULTIPLEXERS, shorten, suggest, type Candidate } from "./suggest.ts"
 
-export const ACTIONS = ["shell", "webfetch", "websearch"] as const
+export const ACTIONS = ["shell", "webfetch"] as const
 
 /** Hosts where the first path segments name an owner, so a rule for the whole host would trust every user's content. */
 const OWNER_SEGMENTS: Record<string, number> = {
@@ -91,34 +91,18 @@ export function suggestWebfetch(entries: readonly AuditEntry[], rules: readonly 
   return out.sort((a, b) => b.allows - a.allows || a.pattern.localeCompare(b.pattern))
 }
 
-/**
- * A search query tells a pattern nothing, so the only rule is `*`. It is proposed only if the judge allowed queries at
- * least `minUses` times and never refused one. A query a specific ask or deny rule covers is not evidence.
- */
-export function suggestWebsearch(entries: readonly AuditEntry[], rules: readonly ShellRule[], minUses = MIN_USES): Candidate[] {
-  const s = newStat()
-  for (const entry of entries) {
-    if (entry.by !== "judge" || entry.action !== "websearch") continue
-    for (const query of entry.resources) {
-      const rule = lastMatch(rules, query)
-      if (rule && (rule.effect === "allow" || isSpecific(rule))) continue
-      if (entry.effect !== "allow") s.blocked = true
-      else {
-        s.allows++
-        s.sessions.add(entry.sessionID)
-        s.examples.add(query)
-      }
-    }
-  }
-  if (s.blocked || s.allows < minUses) return []
-  return [{ action: "websearch", pattern: "*", allows: s.allows, sessions: s.sessions.size, historyRuns: 0, examples: examplesOf(s) }]
-}
-
 /** How many requests the judge reviewed for each action, including those it did not allow. */
 export function reviewedCounts(entries: readonly AuditEntry[]): Record<string, number> {
   const counts: Record<string, number> = Object.fromEntries(ACTIONS.map((a) => [a, 0]))
   for (const e of entries) if (e.by === "judge" && e.action in counts) counts[e.action]!++
   return counts
+}
+
+/** How many sessions the judge reviewed at least one request in, for each action. */
+export function reviewedSessions(entries: readonly AuditEntry[]): Record<string, number> {
+  const seen: Record<string, Set<string>> = Object.fromEntries(ACTIONS.map((a) => [a, new Set<string>()]))
+  for (const e of entries) if (e.by === "judge" && e.action in seen) seen[e.action]!.add(e.sessionID)
+  return Object.fromEntries(Object.entries(seen).map(([action, ids]) => [action, ids.size]))
 }
 
 const words = (rule: string) => rule.split(" ").filter(Boolean)
@@ -154,7 +138,7 @@ function annotate(candidates: readonly Candidate[], rules: readonly ActionRule[]
   return candidates.map((c) => {
     if (c.action !== "shell") return c
     const added = shellNotes(c.pattern, rulesFor(rules, "shell"))
-    return added.length ? { ...c, note: [c.note, ...added].filter(Boolean).join(" ") } : c
+    return added.length ? { ...c, note: added.join(" ") } : c
   })
 }
 
@@ -172,7 +156,6 @@ export function suggestAll(
   const candidates = [
     ...(actions.includes("shell") ? suggest(entries, history, rulesFor(rules, "shell"), minUses) : []),
     ...(actions.includes("webfetch") ? suggestWebfetch(entries, rulesFor(rules, "webfetch"), minUses) : []),
-    ...(actions.includes("websearch") ? suggestWebsearch(entries, rulesFor(rules, "websearch"), minUses) : []),
   ]
   return annotate(
     candidates.filter((c) => lastMatch(rulesFor(rules, c.action), c.pattern)?.effect !== "allow"),

@@ -1,67 +1,110 @@
 # opencode-unattended
 
-An opencode plugin that lets an agent keep working while you are away from the keyboard.
+Automated permission approval for OpenCode, so your agent keeps working while you're away.
 
-Left alone, opencode stops at every permission prompt and waits for you. Pre-approving everything avoids the wait but gives the agent free rein. This plugin sits between the two. When a request would normally ask you, it goes to a language model acting as a reviewer, which decides whether a careful colleague would wave it through.
+When a request matches an `ask` rule, OpenCode stops and waits for you to respond. You can allow everything to get rid of the wait, but then nothing is checked. This plugin sends each `ask` to a second model, the reviewer, instead. It approves what is safe for the task at hand.
 
-The reviewer sees the request, your latest messages and the agent's recent tool calls. It answers allow, ask or deny, with a short reason. Reading, building, testing and editing project files go through. Pushing, publishing, touching credentials, installing system-wide or running code it hasn't seen do not, unless you plainly asked for that very action. Your messages are the only instructions it takes; anything the agent reads along the way, from file contents to web pages, is treated as data.
-
-A refusal doesn't stall the session. The reason goes back to the agent, which can rework the approach or stop and tell you what it needs. You only see a prompt when the plugin can't decide: the reviewer is unreachable, the request can't be parsed, or the agent has been turned back several times in a row. Anything your own permission rules allow or deny is left to those rules.
-
-```
-agent request
-    |
-    v
-your permission rules
-    |
-    +-- allow ---------------> runs
-    +-- deny ----------------> blocked
-    +-- ask
-         |
-         v
-       reviewer
-         |
-         +-- allow ----------> runs
-         +-- ask or deny ----> reason goes back to the agent, which reworks or stops
-         |                     (turned back repeatedly: you are asked instead)
-         +-- cannot decide --> you are asked
-```
-
-Every decision is written to a local audit log, and a small CLI turns the log into usage stats and suggests shell commands that could become permanent allow rules in your config.
+In one real-world log of 3,905 requests, permission rules handled 3,382, the reviewer judged 523, and only one reached the user.
 
 ## Install
 
-Add the plugin to your opencode config, for example `~/.config/opencode/opencode.jsonc`. opencode fetches it from npm on the next start.
+Add the plugin to your OpenCode config, for example `~/.config/opencode/opencode.jsonc`. OpenCode fetches it from npm on the next start. It requires OpenCode 2.x and Bun.
 
 ```jsonc
 {
-  "plugin": [
-    [
-      "opencode-unattended",
-      { "judge": { "model": "anthropic/claude-haiku-5.5", "baseURL": "https://openrouter.ai/api/v1" } }
-    ]
+  "plugins": [
+    {
+      "package": "opencode-unattended",
+      "options": { "judge": { "model": "anthropic/claude-haiku-5.5", "baseURL": "https://openrouter.ai/api/v1" } }
+    }
   ]
 }
 ```
 
-The reviewer is any OpenAI-compatible chat completions endpoint. If `judge.model` or `judge.baseURL` is left out of the options, the plugin reads `OPENCODE_UNATTENDED_MODEL` and `OPENCODE_UNATTENDED_API_URL` instead; options win when both are set. The key comes from `OPENCODE_UNATTENDED_API_KEY` and can be omitted for a local server that needs none. With a required setting missing, the plugin still loads, and every request that reaches it goes to you.
+The reviewer is any OpenAI-compatible chat completions endpoint. `judge.model` and `judge.baseURL` are required. Without them the plugin fails to load. The key comes from the `OPENCODE_UNATTENDED_API_KEY` environment variable and can be left out for a local server that needs none.
 
-Other options:
+The reviewer only sees requests that end in `ask`, so send `shell`, `webfetch` and `external_directory` to it by default and add `allow` and `deny` rules for what you already know. The last matching rule wins, so exceptions follow the broad rule:
 
-- `judge.timeout`: how long one review may take, as a duration such as `"30s"`.
-- `judge.promptCache`: `{ "ttl": "1h" }` asks the endpoint to cache the system prompt; `ttl` is `"5m"` or `"1h"`.
-- `escalateAfter`: how many requests in a row, or denies in a session, the reviewer may turn back before you are asked. Default 3.
-- `auditDir`: where the audit log goes, `~/.local/state/opencode-unattended` by default. `false` turns the log off, along with the rule-suggestion tool and skill that depend on it.
+```jsonc
+"permissions": [
+  { "action": "*", "resource": "*", "effect": "ask" },
+  { "action": "shell", "resource": "*", "effect": "ask" },
+  { "action": "shell", "resource": "git status *", "effect": "allow" },
+  { "action": "shell", "resource": "rm -rf *", "effect": "deny" },
+  { "action": "shell", "resource": "sudo *", "effect": "deny" },
+  { "action": "webfetch", "resource": "*", "effect": "ask" },
+  { "action": "read", "resource": "*", "effect": "allow" },
+  { "action": "grep", "resource": "*", "effect": "allow" },
+  { "action": "glob", "resource": "*", "effect": "allow" },
+  { "action": "edit", "resource": "*", "effect": "allow" },
+  { "action": "external_directory", "resource": "*", "effect": "ask" },
+  { "action": "*", "resource": "*.env", "effect": "ask" }
+]
+```
 
-The plugin and the CLI below run on Bun, which opencode already uses.
+The last rule asks again for `.env` files, because it comes after the allows for `read` and `edit`. Add anything else you want pre-approved. `suggest` (below) finds more allow rules as you go.
 
-## CLI
+## How it works
+
+OpenCode checks the permission rules you've configured first. A request one of them allows or denies never reaches the reviewer.
+
+The reviewer sees the request, your latest messages and the agent's recent tool calls. Your messages are the only instructions it takes. When it turns a request back, the agent gets the reason and reworks its approach or stops. If the reviewer can't decide, or turns the agent back several times in a row, you are asked instead.
+
+## Your rules over time
+
+Every decision, yours and the reviewer's, goes to a local audit log. Install the CLI with `bun add -g opencode-unattended`, or run its commands with `bunx opencode-unattended`.
+
+`stats` shows how many requests your rules handled, what the reviewer allowed, turned back or failed on, and how long it took. For instance:
 
 ```
-opencode-unattended stats [--since 180d] [--project TEXT] [--top ask|deny|error]
-opencode-unattended suggest [--since 7d] [--action NAME] [--json]
+$ opencode-unattended stats
+                                                % of requests
+ACTION                  REQUESTS          CONFIG         JUDGED    PROMPTED
+shell                       1811           75.4%          24.6%        0.1%
+external_directory          1324           99.1%           0.9%        0.0%
+edit                         392           99.0%           1.0%        0.0%
+read                         220          100.0%           0.0%        0.0%
+webfetch                      65            6.2%          93.8%        0.0%
+grep                          46          100.0%           0.0%        0.0%
+subagent                      35          100.0%           0.0%        0.0%
+glob                           9          100.0%           0.0%        0.0%
+websearch                      3          100.0%           0.0%        0.0%
+TOTAL                       3905    86.6% (3382)    13.4% (523)    0.0% (1)
+
+                                                % of judged
+MODEL                         JUDGED  ALLOWED  DENIED  PROMPTED  FAILED     P50     P95
+openrouter.ai
+  anthropic/claude-haiku-5.5     516    97.1%    2.7%      0.2%    0.0%    2.8s    5.3s
 ```
 
-`stats` summarizes the audit log: how many requests your rules settled, how many the reviewer allowed, turned back or failed on, and how long it took. `suggest` reads the same log and your opencode config and lists shell commands, webfetch origins and searches the reviewer keeps allowing, as candidates for permanent allow rules. Both accept `--help` for the full option list.
+`suggest` lists the shell commands and webfetch origins the reviewer keeps allowing, as candidates for permanent allow rules:
 
-Install it with `bun add -g opencode-unattended`, which also provides the shorter `unattended` command, or run it once with `bunx opencode-unattended stats`.
+```
+$ opencode-unattended suggest
+[shell]
+PATTERN              % OF JUDGED  % OF SESSIONS  EXAMPLE
+git log --oneline *        19.4%          30.0%  git log --oneline -5
+go test *                  16.7%          35.0%  go test ./pkg
+git diff --stat *           8.3%          20.0%  git diff --stat
+go vet *                    6.9%          15.0%  go vet ./cmd
+go doc *                    5.6%          15.0%  go doc net/http
+
+[webfetch]
+PATTERN                      % OF JUDGED  % OF SESSIONS  EXAMPLE
+https://pkg.go.dev/*               35.5%          53.8%  https://pkg.go.dev/net/http
+https://go.dev/*                   19.4%          30.8%  https://go.dev/doc/effective_go
+https://docs.python.org/*           9.7%          15.4%  https://docs.python.org/3/library/os.html
+https://github.com/golang/*         9.7%          15.4%  https://github.com/golang/go/issues/12345
+```
+
+Every rule you add means one less request for the reviewer. `suggest` can't tell whether a rule is safe, so read each one before you paste it in. The bundled skill does that review with you: ask your agent which commands could become allow rules.
+
+## Options
+
+The `judge.*` options go inside `judge`. `auditLog` and `dataDir` sit next to it.
+
+- `judge.timeout`: how long one review may take. Default `"15s"`.
+- `judge.promptCache`: set to `{ "ttl": "1h" }` to have the endpoint cache the system prompt. `ttl` is a duration, and the provider decides which ones it accepts. Off unless set.
+- `judge.escalateAfter`: how many turn-backs in a row, or denies in a session, before you are asked. Default 3.
+- `auditLog.enabled`: `false` turns off the audit log, along with the suggestion tool and skill that read it. Default `true`.
+- `dataDir`: where the plugin keeps its files, including the audit log. Default `~/.local/state/opencode-unattended`.

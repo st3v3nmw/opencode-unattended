@@ -1,5 +1,5 @@
 import { JudgeNotConfigured, JudgeUnavailable } from "../src/judge.ts"
-import { API_URL_ENV, DEFAULT_CACHE_TTL, createOpenAIJudge, hostOf } from "../src/judges/openai.ts"
+import { DEFAULT_CACHE_TTL, createOpenAIJudge, hostOf } from "../src/judges/openai.ts"
 import { VERDICTS } from "../src/verdict.ts"
 import { CASES, type Case } from "./cases.ts"
 import { caseId, dollars, emptyRun, loadRun, nextSample, saveRun, score, type Price, type Run } from "./store.ts"
@@ -24,6 +24,12 @@ const fresh = flags.has("--fresh")
 const retryErrors = flags.has("--retry-errors")
 const promptCache = flags.has("--cache")
 
+const API_URL = process.env.EVAL_API_URL ?? ""
+if (!API_URL) {
+  console.error("set EVAL_API_URL to an OpenAI-compatible base URL, such as https://openrouter.ai/api/v1")
+  process.exit(1)
+}
+
 // Slow by default: one request at a time, a pause after each, and a longer one between models.
 const CONCURRENCY = Number(process.env.EVAL_CONCURRENCY ?? 1)
 const DELAY_MS = Number(process.env.EVAL_DELAY_MS ?? 1000)
@@ -44,7 +50,7 @@ function commit(): string {
 
 async function prices(): Promise<Map<string, Price>> {
   const found = new Map<string, Price>()
-  if (hostOf(process.env[API_URL_ENV] ?? "") !== "openrouter.ai") return found
+  if (hostOf(API_URL) !== "openrouter.ai") return found
   try {
     const body = (await (await fetch("https://openrouter.ai/api/v1/models")).json()) as { data: { id: string; pricing: { prompt: string; completion: string } }[] }
     for (const m of body.data) found.set(m.id, { input: Number(m.pricing.prompt) * 1e6, output: Number(m.pricing.completion) * 1e6 })
@@ -56,7 +62,7 @@ async function prices(): Promise<Map<string, Price>> {
 
 /** Calls the model for each case without an outcome, saving after every one. Returns false if it gave up. */
 async function fill(run: Run, todo: Case[]): Promise<boolean> {
-  const judge = createOpenAIJudge({ model: run.model, promptCache: { enabled: promptCache, ttl: DEFAULT_CACHE_TTL } })
+  const judge = createOpenAIJudge({ model: run.model, baseURL: API_URL, promptCache: { enabled: promptCache, ttl: DEFAULT_CACHE_TTL } })
   let next = 0
   let done = 0
   let streak = 0

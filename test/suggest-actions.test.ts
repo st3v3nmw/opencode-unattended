@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { AuditEntry } from "../src/audit.ts"
 import type { ActionRule, ShellRule } from "../src/rules.ts"
 import { formatSuggestions } from "../src/suggest.ts"
-import { reviewedCounts, shellResolver, suggestAll, suggestWebfetch, suggestWebsearch, withoutUnresolved } from "../src/suggest-actions.ts"
+import { reviewedCounts, reviewedSessions, shellResolver, suggestAll, suggestWebfetch, withoutUnresolved } from "../src/suggest-actions.ts"
 
 let n = 0
 const judged = (action: string, effect: AuditEntry["effect"], ...resources: string[]): AuditEntry => ({
@@ -107,27 +107,6 @@ describe("suggestWebfetch", () => {
   })
 })
 
-describe("suggestWebsearch", () => {
-  const searched = (times: number, effect: AuditEntry["effect"] = "allow") =>
-    Array.from({ length: times }, (_, i) => judged("websearch", effect, `query ${i}`))
-  const run = (entries: AuditEntry[], rules: ShellRule[] = []) => suggestWebsearch(entries, rules).map((c) => c.pattern)
-
-  test("proposes `*` once the judge has allowed enough searches and never refused one", () => {
-    expect(suggestWebsearch(searched(3), [])).toMatchObject([{ action: "websearch", pattern: "*", allows: 3, historyRuns: 0 }])
-    expect(run(searched(2))).toEqual([])
-    expect(run([...searched(5), ...searched(1, "ask")])).toEqual([])
-  })
-
-  test("nothing to propose when the config already allows it", () => {
-    expect(run(searched(5), [rule("*", "ask"), rule("*", "allow")])).toEqual([])
-  })
-
-  test("a query a specific rule covers is not evidence", () => {
-    expect(run(searched(3), [rule("query 1", "ask")])).toEqual([])
-    expect(run(searched(4), [rule("query 1", "ask")])).toEqual(["*"])
-  })
-})
-
 describe("suggestAll", () => {
   const entries = [...fetched("https://docs.example.com/a"), ...shelled("make lint")]
   const rules: ActionRule[] = [
@@ -149,10 +128,8 @@ describe("suggestAll", () => {
       { action: "*", resource: "*", effect: "ask" },
       { action: "shell", resource: "make *", effect: "allow" },
       { action: "webfetch", resource: "https://docs.example.com/*", effect: "allow" },
-      { action: "websearch", resource: "*", effect: "allow" },
     ]
-    const searched = Array.from({ length: 4 }, (_, i) => judged("websearch", "allow", `query ${i}`))
-    expect(suggestAll([...entries, ...searched, ...shelled("make lint --fix")], [], wide)).toEqual([])
+    expect(suggestAll([...entries, ...shelled("make lint --fix")], [], wide)).toEqual([])
   })
 
   describe("notes for the reviewer", () => {
@@ -175,7 +152,7 @@ describe("suggestAll", () => {
       expect(noteOf("git status -s")).toBeUndefined()
     })
 
-    test("a note never removes the candidate or the note it already had", () => {
+    test("a note never removes the candidate", () => {
       const [c] = suggestAll(shelled("git -C app log"), [], denied)
       expect(c!.pattern).toBe("git -C app *")
     })
@@ -189,36 +166,43 @@ describe("suggestAll", () => {
 describe("reviewedCounts", () => {
   test("counts what the judge reviewed per action, refusals included", () => {
     const entries = [...fetched("https://a.example.com/x", 2), ...fetched("https://a.example.com/y", 1, "ask"), ...shelled("ls", 1), judged("edit", "allow", "x")]
-    expect(reviewedCounts(entries)).toEqual({ shell: 1, webfetch: 3, websearch: 0 })
+    expect(reviewedCounts(entries)).toEqual({ shell: 1, webfetch: 3 })
+  })
+})
+
+describe("reviewedSessions", () => {
+  test("counts the sessions the judge reviewed each action in, refusals included", () => {
+    const entries = [
+      { ...judged("shell", "allow", "ls"), sessionID: "a" },
+      { ...judged("shell", "ask", "ls"), sessionID: "a" },
+      { ...judged("shell", "allow", "ls"), sessionID: "b" },
+      { ...judged("webfetch", "allow", "https://x.example/"), sessionID: "a" },
+      { ...judged("edit", "allow", "f"), sessionID: "c" },
+    ]
+    expect(reviewedSessions(entries)).toEqual({ shell: 2, webfetch: 1 })
   })
 })
 
 describe("formatSuggestions with several actions", () => {
-  test("groups candidates under their action and leaves out what does not apply to them", () => {
+  const cells = (text: string) => text.split("\n").map((line) => line.trim().split(/\s{2,}/))
+
+  test("groups candidates under their action, each with its own table", () => {
     const entries = [...fetched("https://docs.example.com/a"), ...shelled("make lint")]
-    const scope = { days: 7, judged: 3, runs: 5, reviewed: { shell: 3, webfetch: 3, websearch: 0 } }
-    expect(formatSuggestions(suggestAll(entries, [], []), scope)).toBe(
-      [
-        "Last 7 days: 3 shell requests went to the judge, and 5 shell commands ran in recent sessions. It also reviewed 3 webfetch requests.",
-        "",
-        "These are patterns the judge allowed, not recommendations. A rule covers every command it matches, not only the ones the judge saw, so review each before it goes in a config.",
-        "",
-        "[shell]",
-        "make lint *",
-        "  allowed by the judge 3 times in 2 sessions; ran 0 times in recent sessions",
-        "  e.g. `make lint`",
-        "",
-        "[webfetch]",
-        "https://docs.example.com/*",
-        "  allowed by the judge 3 times in 2 sessions",
-        "  e.g. `https://docs.example.com/a`",
-      ].join("\n"),
-    )
+    const scope = { reviewed: { shell: 12, webfetch: 3 }, sessions: { shell: 4, webfetch: 2 } }
+    expect(cells(formatSuggestions(suggestAll(entries, [], []), scope))).toEqual([
+      ["[shell]"],
+      ["PATTERN", "% OF JUDGED", "% OF SESSIONS", "EXAMPLE"],
+      ["make lint *", "25.0%", "50.0%", "make lint"],
+      [""],
+      ["[webfetch]"],
+      ["PATTERN", "% OF JUDGED", "% OF SESSIONS", "EXAMPLE"],
+      ["https://docs.example.com/*", "100.0%", "100.0%", "https://docs.example.com/a"],
+    ])
   })
 
   test("a lone webfetch group still gets its heading", () => {
-    const text = formatSuggestions(suggestWebfetch(fetched("https://docs.example.com/a"), []), { days: 1, judged: 0, runs: 0 })
-    expect(text).toContain("\n\n[webfetch]\nhttps://docs.example.com/*\n")
+    const text = formatSuggestions(suggestWebfetch(fetched("https://docs.example.com/a"), []), { reviewed: {}, sessions: {} })
+    expect(text.startsWith("[webfetch]\nPATTERN")).toBe(true)
   })
 })
 

@@ -3,7 +3,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import type { AuditEntry } from "./audit.ts"
 
-export const DEFAULT_AUDIT_DIR = join(homedir(), ".local", "state", "opencode-unattended")
+export const DEFAULT_DATA_DIR = join(homedir(), ".local", "state", "opencode-unattended")
 
 const KEEP_MONTHS = 6
 const MAX_RESOURCE_CHARS = 500

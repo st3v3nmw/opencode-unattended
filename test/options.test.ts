@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_AUDIT_DIR } from "../src/auditlog.ts"
+import { DEFAULT_DATA_DIR } from "../src/auditlog.ts"
 import { parseOptions } from "../src/options.ts"
 
 const JUDGE = { model: "a/b", baseURL: "https://x.example/v1" }
@@ -10,7 +10,8 @@ describe("parseOptions defaults", () => {
       apiStyle: "openai",
       judge: JUDGE,
       escalateAfter: 3,
-      auditDir: DEFAULT_AUDIT_DIR,
+      dataDir: DEFAULT_DATA_DIR,
+      auditLog: { enabled: true },
     })
   })
 
@@ -18,8 +19,8 @@ describe("parseOptions defaults", () => {
     expect(parseOptions({}).judge).toEqual({})
   })
 
-  test("apiStyle is taken out of the options handed to the style", () => {
-    const settings = parseOptions({ judge: { ...JUDGE, apiStyle: "other" } })
+  test("apiStyle and escalateAfter are taken out of the options handed to the style", () => {
+    const settings = parseOptions({ judge: { ...JUDGE, apiStyle: "other", escalateAfter: 5 } })
     expect(settings.apiStyle).toBe("other")
     expect(settings.judge).toEqual(JUDGE)
   })
@@ -27,14 +28,27 @@ describe("parseOptions defaults", () => {
 
 describe("parseOptions overrides", () => {
   test("every option can be set", () => {
-    expect(parseOptions({ judge: JUDGE, escalateAfter: 5, auditDir: "/tmp/audit" })).toMatchObject({
-      escalateAfter: 5,
-      auditDir: "/tmp/audit",
-    })
+    expect(
+      parseOptions({ judge: { ...JUDGE, escalateAfter: 5 }, dataDir: "/tmp/data", auditLog: { enabled: false } }),
+    ).toMatchObject({ escalateAfter: 5, dataDir: "/tmp/data", auditLog: { enabled: false } })
   })
 
-  test("auditDir false turns the log off", () => {
-    expect(parseOptions({ judge: JUDGE, auditDir: false }).auditDir).toBe(false)
+  test("the options of earlier versions still work", () => {
+    expect(parseOptions({ judge: JUDGE, escalateAfter: 5 }).escalateAfter).toBe(5)
+    expect(parseOptions({ judge: JUDGE, auditDir: "/tmp/audit" })).toMatchObject({ dataDir: "/tmp/audit", auditLog: { enabled: true } })
+    expect(parseOptions({ judge: JUDGE, auditDir: false }).auditLog.enabled).toBe(false)
+  })
+
+  test("the newer options win over the earlier ones", () => {
+    const settings = parseOptions({
+      judge: { ...JUDGE, escalateAfter: 4 },
+      escalateAfter: 9,
+      dataDir: "/tmp/data",
+      auditDir: "/tmp/audit",
+      auditLog: { enabled: true },
+    })
+    expect(settings).toMatchObject({ escalateAfter: 4, dataDir: "/tmp/data", auditLog: { enabled: true } })
+    expect(parseOptions({ judge: JUDGE, auditDir: false, auditLog: { enabled: true } }).auditLog.enabled).toBe(true)
   })
 
   test("unknown options are ignored, so options from earlier versions do not break a config", () => {
@@ -51,11 +65,24 @@ describe("parseOptions rejections", () => {
   })
 
   test.each([[0], [1.5], ["3"]])("escalateAfter rejects %p", (value) => {
-    fails({ judge: JUDGE, escalateAfter: value }, "escalateAfter must be an integer of at least 1")
+    fails({ judge: { ...JUDGE, escalateAfter: value } }, "judge.escalateAfter must be an integer of at least 1")
+    fails({ judge: JUDGE, escalateAfter: value }, "judge.escalateAfter must be an integer of at least 1")
+  })
+
+  test.each([[true], [""], [5]])("dataDir rejects %p", (value) => {
+    fails({ judge: JUDGE, dataDir: value }, "dataDir must be a directory path")
   })
 
   test.each([[true], [""]])("auditDir rejects %p", (value) => {
     fails({ judge: JUDGE, auditDir: value }, "auditDir must be a directory path or false")
+  })
+
+  test.each([[true], ["off"], [[]]])("auditLog rejects %p", (value) => {
+    fails({ judge: JUDGE, auditLog: value }, "auditLog must be an object")
+  })
+
+  test.each([["yes"], [1], [null]])("auditLog.enabled rejects %p", (value) => {
+    fails({ judge: JUDGE, auditLog: { enabled: value } }, "auditLog.enabled must be true or false")
   })
 
   test("apiStyle must be a non-empty string", () => {

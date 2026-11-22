@@ -1,8 +1,8 @@
 {
   "name": "opencode-unattended",
-  "version": "0.1.0",
-  "description": "opencode plugin that lets an LLM reviewer answer permission prompts so the agent can keep working while you are away",
-  "keywords": ["opencode", "opencode-plugin", "permissions", "agent"],
+  "version": "0.1.1",
+  "description": "Automated permission approval for OpenCode, so your agent keeps working while you're away.",
+  "keywords": ["opencode", "opencode-plugin", "ai-agents", "ai-safety", "developer-tools", "permissions"],
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -17,8 +17,7 @@
     "url": "https://github.com/st3v3nmw/opencode-unattended/issues"
   },
   "bin": {
-    "opencode-unattended": "./cli/index.ts",
-    "unattended": "./cli/index.ts"
+    "opencode-unattended": "./cli/index.ts"
   },
   "files": ["src", "cli", "README.md", "LICENSE"],
   "engines": {
@@ -37,7 +36,7 @@
     "suggest": "bun run cli/suggest.ts"
   },
   "peerDependencies": {
-    "@opencode/plugin": "2.3.0"
+    "@opencode/plugin": ">=2.3.0 <3"
   },
   "devDependencies": {
     "@opencode/plugin": "2.3.0",

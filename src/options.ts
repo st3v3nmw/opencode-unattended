@@ -1,15 +1,16 @@
-import { DEFAULT_AUDIT_DIR } from "./auditlog.ts"
+import { DEFAULT_DATA_DIR } from "./auditlog.ts"
 import type { JudgeOptions } from "./judge.ts"
 
 export const DEFAULT_API_STYLE = "openai"
 
 export interface Settings {
   apiStyle: string
-  /** Everything under `judge` except `apiStyle`; the selected API style validates it. */
+  /** Everything under `judge` except `apiStyle` and `escalateAfter`; the selected API style validates it. */
   judge: JudgeOptions
   /** Requests in a row, or denies in a session, the judge may turn back before the next one goes to you. */
   escalateAfter: number
-  auditDir: string | false
+  dataDir: string
+  auditLog: { enabled: boolean }
 }
 
 type Raw = Readonly<Record<string, unknown>>
@@ -29,18 +30,29 @@ export function parseOptions(raw: Raw): Settings {
   if (raw.judge !== undefined && !isRecord(raw.judge)) {
     throw new Error(`judge must be an object with model and baseURL, not ${typeof raw.judge}`)
   }
-  const { apiStyle = DEFAULT_API_STYLE, ...judge } = raw.judge ?? {}
+  const { apiStyle = DEFAULT_API_STYLE, escalateAfter, ...judge } = raw.judge ?? {}
   if (typeof apiStyle !== "string" || !apiStyle) throw new Error("judge.apiStyle must be a non-empty string")
 
-  const auditDir = raw.auditDir === undefined ? DEFAULT_AUDIT_DIR : raw.auditDir
-  if (auditDir !== false && (typeof auditDir !== "string" || !auditDir)) {
+  if (raw.auditLog !== undefined && !isRecord(raw.auditLog)) {
+    throw new Error('auditLog must be an object such as { "enabled": false }')
+  }
+  const { enabled } = raw.auditLog ?? {}
+  if (enabled !== undefined && typeof enabled !== "boolean") throw new Error("auditLog.enabled must be true or false")
+
+  // TODO: remove auditDir, which dataDir and auditLog.enabled replace.
+  const { auditDir } = raw
+  if (auditDir !== undefined && auditDir !== false && (typeof auditDir !== "string" || !auditDir)) {
     throw new Error("auditDir must be a directory path or false")
   }
+  const dataDir = raw.dataDir ?? (typeof auditDir === "string" ? auditDir : DEFAULT_DATA_DIR)
+  if (typeof dataDir !== "string" || !dataDir) throw new Error("dataDir must be a directory path")
 
   return {
     apiStyle,
     judge,
-    escalateAfter: integer(raw.escalateAfter, "escalateAfter", 3, 1),
-    auditDir,
+    // TODO: remove the top-level escalateAfter, which judge.escalateAfter replaces.
+    escalateAfter: integer(escalateAfter ?? raw.escalateAfter, "judge.escalateAfter", 3, 1),
+    dataDir,
+    auditLog: { enabled: enabled ?? auditDir !== false },
   }
 }

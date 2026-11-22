@@ -1,7 +1,7 @@
 import type { AuditEntry } from "./audit.ts"
 import type { ActionRule, Effect } from "./rules.ts"
 import { formatSuggestions } from "./suggest.ts"
-import { reviewedCounts, shellResolver, suggestAll, withoutUnresolved, type Resolver } from "./suggest-actions.ts"
+import { reviewedCounts, reviewedSessions, shellResolver, suggestAll, withoutUnresolved, type Resolver } from "./suggest-actions.ts"
 
 export const SUGGEST_TOOL = "unattended_suggest"
 
@@ -26,7 +26,7 @@ export function suggestTool({ entries, commands, now = Date.now, resolves = shel
   return {
     name: SUGGEST_TOOL,
     description:
-      "Lists the shell commands, webfetch URLs and websearch patterns the unattended judge keeps allowing, with the evidence, as candidates for allow rules that would stop costing a judge call. The candidates are not recommendations and need review. Read-only: it reads the audit log and recent session history and changes nothing.",
+      "Lists the shell commands and webfetch URLs the unattended judge keeps allowing, with the evidence, as candidates for allow rules that would stop costing a judge call. The candidates are not recommendations and need review. Read-only: it reads the audit log and recent session history and changes nothing.",
     input: {
       type: "object",
       properties: {
@@ -34,7 +34,7 @@ export function suggestTool({ entries, commands, now = Date.now, resolves = shel
         rules: {
           type: "array",
           description:
-            "Every shell, webfetch, websearch and * permission rule from the user's opencode config, in file order (the last match wins), each with its action. Pass [] only if there are none.",
+            "Every shell, webfetch and * permission rule from the user's opencode config, in file order (the last match wins), each with its action. Pass [] only if there are none.",
           items: {
             type: "object",
             properties: { action: { type: "string" }, resource: { type: "string" }, effect: { enum: EFFECTS } },
@@ -56,9 +56,10 @@ export function suggestTool({ entries, commands, now = Date.now, resolves = shel
       const audited = entries(since).filter((e) => e.time >= since)
       const history = await commands(since)
       const reviewed = reviewedCounts(audited)
+      const sessions = reviewedSessions(audited)
       const configured: ActionRule[] = rules.map((r) => ({ action: r.action ?? "shell", resource: r.resource, effect: r.effect }))
       const { candidates, skipped } = withoutUnresolved(suggestAll(audited, history, configured), resolves)
-      return { content: formatSuggestions(candidates, { days, judged: reviewed.shell!, runs: history.length, reviewed, skipped }) }
+      return { content: formatSuggestions(candidates, { reviewed, sessions, skipped }) }
     },
   }
 }

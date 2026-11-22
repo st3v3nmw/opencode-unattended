@@ -39,7 +39,7 @@ async function load(table: Record<string, string>, { options = {}, sessionMessag
   const toolHooks: Record<string, (event: unknown) => void> = {}
   const registered: string[] = []
   const ctx = {
-    options: { judge: { apiStyle: "table", table }, auditDir: false, ...options },
+    options: { judge: { apiStyle: "table", table }, auditLog: { enabled: false }, ...options },
     location: { directory: "/work/app", project: { id: "proj-1" } },
     permission: {
       hook: async (_name: string, cb: typeof evaluate) => {
@@ -168,7 +168,7 @@ describe.each(ACTIONS)("an ask for %s", (action, resources) => {
 
   test("is logged with its action and resources, and extra event fields are harmless", async () => {
     const dir = join(mkdtempSync(join(tmpdir(), "unattended-")), "log")
-    const { run } = await load({ [key]: "allow" }, { options: { auditDir: dir } })
+    const { run } = await load({ [key]: "allow" }, { options: { auditLog: { enabled: true }, dataDir: dir } })
     await run({ action, resources, effect: "ask", metadata: { anything: 1 } })
     expect(readEntries(dir)).toMatchObject([{ by: "judge", action, resources, effect: "allow", judge: "table" }])
   })
@@ -243,13 +243,13 @@ describe("plugin telemetry", () => {
   const logDir = () => join(mkdtempSync(join(tmpdir(), "unattended-")), "nested")
 
   test("offers the rule-suggestion tool and skill only while the audit log is on", async () => {
-    expect((await load({}, { options: { auditDir: logDir() } })).registered).toEqual(["unattended_suggest", "suggest-allow-rules"])
+    expect((await load({}, { options: { auditLog: { enabled: true }, dataDir: logDir() } })).registered).toEqual(["unattended_suggest", "suggest-allow-rules"])
     expect((await load({})).registered).toEqual([])
   })
 
   test("records what the config decided and what the judge decided, tagged with the directory", async () => {
     const dir = logDir()
-    const { run } = await load({ ls: "allow" }, { options: { auditDir: dir } })
+    const { run } = await load({ ls: "allow" }, { options: { auditLog: { enabled: true }, dataDir: dir } })
     await run({ action: "shell", resources: ["ls"], effect: "ask" })
     await run({ action: "shell", resources: ["pwd"], effect: "allow" })
     await run({ action: "edit", resources: ["a.txt"], effect: "allow" })
@@ -268,11 +268,11 @@ describe("plugin telemetry", () => {
 
   test("removes monthly files older than the retention window when it loads", async () => {
     const dir = logDir()
-    await load({}, { options: { auditDir: dir } })
+    await load({}, { options: { auditLog: { enabled: true }, dataDir: dir } })
     writeFileSync(join(dir, "audit-2020-01.jsonl"), "")
     const recent = join(dir, "audit-2999-01.jsonl")
     writeFileSync(recent, "")
-    await load({}, { options: { auditDir: dir } })
+    await load({}, { options: { auditLog: { enabled: true }, dataDir: dir } })
     expect(existsSync(join(dir, "audit-2020-01.jsonl"))).toBe(false)
     expect(existsSync(recent)).toBe(true)
   })
