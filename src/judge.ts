@@ -30,7 +30,7 @@ export interface Usage {
 
 export interface Judgement {
   verdict: Verdict
-  /** One short sentence on why, addressed to the agent. Empty for allow, or when the model gave none. */
+  /** One short sentence on why. For a deny it is addressed to the agent. Empty when the model gave none. */
   reason: string
   usage?: Usage
 }

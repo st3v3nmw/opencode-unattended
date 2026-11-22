@@ -64,7 +64,11 @@ describe("openai judge", () => {
   })
 
   test("tolerates a fenced JSON reply", () => {
-    expect(parseJudgement('```json\n{"decision":"ask","reason":"Needs sign-off."}\n```')).toEqual({ verdict: "ask", reason: "Needs sign-off." })
+    expect(parseJudgement('```json\n{"decision":"deny","reason":"Needs sign-off."}\n```')).toEqual({ verdict: "deny", reason: "Needs sign-off." })
+  })
+
+  test("an ask from a model that did not follow the prompt is a deny", () => {
+    expect(parseJudgement('{"decision":"ask","reason":"Needs sign-off."}')).toEqual({ verdict: "deny", reason: "Needs sign-off." })
   })
 
   test.each([
@@ -77,12 +81,12 @@ describe("openai judge", () => {
   test("a reason is optional, tidied, and bounded", () => {
     expect(parseJudgement('{"decision":"deny"}')).toEqual({ verdict: "deny", reason: "" })
     expect(parseJudgement('{"decision":"deny","reason":"  Wipes\\n  the   disk. "}').reason).toBe("Wipes the disk.")
-    expect(parseJudgement(`{"decision":"deny","reason":"${"x".repeat(500)}"}`).reason).toHaveLength(200)
+    expect(parseJudgement(`{"decision":"deny","reason":"${"x".repeat(500)}"}`).reason).toHaveLength(500)
     expect(parseJudgement('{"decision":"deny","reason":42}').reason).toBe("")
   })
 
-  test("an allow carries no reason, whatever the model wrote", () => {
-    expect(parseJudgement('{"decision":"allow","reason":"Looks fine."}')).toEqual({ verdict: "allow", reason: "" })
+  test("an allow keeps its reason", () => {
+    expect(parseJudgement('{"decision":"allow","reason":"Looks fine."}')).toEqual({ verdict: "allow", reason: "Looks fine." })
   })
 
   test("the request asks for a decision and a reason, both required", async () => {
@@ -329,11 +333,11 @@ describe("retries", () => {
     expect(sleeps).toEqual([])
   })
 
-  test("a wait that would take the total past 180s is skipped", async () => {
+  test("a wait that would take the total past 300s is skipped", async () => {
     let clock = 0
     const sleeps: number[] = []
     const slow = (async () => {
-      clock += 50_000
+      clock += 100_000
       return limited("60")
     }) as unknown as typeof fetch
     const judge = judgeWith(slow, FULL_ENV, { now: () => clock, sleep: async (ms) => void (sleeps.push(ms), (clock += ms)) })

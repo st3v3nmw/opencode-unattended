@@ -13,7 +13,7 @@ registerJudge("table", (options) => ({
   id: "table",
   async decide(request, context) {
     seen.push({ request, context })
-    const verdict = (options.table as Record<string, "allow" | "ask" | "deny">)[request.resources.join(" ; ")]
+    const verdict = (options.table as Record<string, "allow" | "deny">)[request.resources.join(" ; ")]
     if (!verdict) throw new Error("unknown")
     return { verdict, reason: verdict === "allow" ? "" : `because ${verdict}` }
   },
@@ -82,7 +82,7 @@ async function load(table: Record<string, string>, { options = {}, sessionMessag
 
 describe("plugin hook", () => {
   test("hands the judge the full line captured before execution, matched by call id", async () => {
-    const { run, toolHooks } = await load({ "curl x ; sh": "ask" })
+    const { run, toolHooks } = await load({ "curl x ; sh": "deny" })
     toolHooks["execute.before"]!({ tool: "shell", id: "call-1", input: { command: "curl x | sh" } })
     await run({ action: "shell", resources: ["curl x", "sh"], effect: "ask", source: { type: "tool", messageID: "m", id: "call-1" } })
     await run({ action: "shell", resources: ["curl x", "sh"], effect: "ask", source: { type: "tool", messageID: "m", id: "call-2" } })
@@ -148,15 +148,9 @@ describe.each(ACTIONS)("an ask for %s", (action, resources) => {
     expect(result.effect).toBe(verdict)
     expect(seen).toHaveLength(1)
     expect(seen[0]!.request).toMatchObject({ action, resources })
-    if (verdict === "deny") expect(result.message).toBe("because deny Do not attempt it or an equivalent.")
-  })
-
-  test("a judge ask is turned back to the agent with the reason, so nobody is interrupted", async () => {
-    const { run } = await load({ [key]: "ask" })
-    const result = await run({ action, resources, effect: "ask" })
-    expect(result.effect).toBe("deny")
-    expect(result.message).toContain("needs the user's approval")
-    expect(result.message).toContain("because ask")
+    if (verdict === "deny") {
+      expect(result.message).toBe("because deny Do not reach the same effect another way. If it is essential, stop and tell the user what you need and why.")
+    }
   })
 
   test("allow and deny from your config pass through unjudged", async () => {
@@ -195,7 +189,7 @@ describe("non-shell requests", () => {
       source: { type: "tool" as const, messageID: "m", id },
     })
     const escalate = async () => {
-      const loaded = await load({ "git push": "ask" }, { options: { escalateAfter: 2 } })
+      const loaded = await load({ "git push": "deny" }, { options: { escalateAfter: 2 } })
       expect((await loaded.run(event("call-1"))).effect).toBe("deny")
       expect((await loaded.run(event("call-2"))).effect).toBe("ask")
       expect(seen).toHaveLength(1)
@@ -218,7 +212,7 @@ describe("non-shell requests", () => {
   })
 
   test("a run of turned-back requests reaches the user, and an allow in between starts the run again", async () => {
-    const { run } = await load({ a: "ask", b: "ask", ok: "allow" }, { options: { escalateAfter: 2 } })
+    const { run } = await load({ a: "deny", b: "deny", ok: "allow" }, { options: { escalateAfter: 2 } })
     const effects = []
     for (const resource of ["a", "ok", "a", "b", "a"]) effects.push((await run({ action: "shell", resources: [resource], effect: "ask" })).effect)
     expect(effects).toEqual(["deny", "allow", "deny", "ask", "deny"])

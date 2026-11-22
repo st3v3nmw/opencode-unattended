@@ -7,6 +7,7 @@ export const DEFAULT_DATA_DIR = join(homedir(), ".local", "state", "opencode-una
 
 const KEEP_MONTHS = 6
 const MAX_RESOURCE_CHARS = 500
+const MAX_WHY_CHARS = 500
 const FILE = /^audit-(\d{4})-(0[1-9]|1[0-2])\.jsonl$/
 
 /** The calendar month (UTC) containing `time`, as `2026-11`. */
@@ -45,18 +46,18 @@ function stripUrlDetail(text: string): string {
   }
 }
 
-const truncate = (text: string) => (text.length > MAX_RESOURCE_CHARS ? text.slice(0, MAX_RESOURCE_CHARS) + "…" : text)
+const truncate = (text: string, max: number) => (text.length > max ? text.slice(0, max) + "…" : text)
 
 /**
- * Shortens what the log keeps: home becomes `~`, URLs lose query strings, long commands are cut. Entries your config
+ * Shortens what the log keeps: home becomes `~`, URLs lose query strings, long commands and reasons are cut. Entries your config
  * decided keep no resources at all, because nothing reads them.
  */
 export function sanitize(entry: AuditEntry): AuditEntry {
   const resources =
     entry.by === "config"
       ? []
-      : entry.resources.map((r) => truncate(tildify(entry.action === "webfetch" ? stripUrlDetail(r) : r)))
-  return { ...entry, directory: tildify(entry.directory), resources, ...(entry.why ? { why: tildify(entry.why) } : {}) }
+      : entry.resources.map((r) => truncate(tildify(entry.action === "webfetch" ? stripUrlDetail(r) : r), MAX_RESOURCE_CHARS))
+  return { ...entry, directory: tildify(entry.directory), resources, ...(entry.why ? { why: truncate(tildify(entry.why), MAX_WHY_CHARS) } : {}) }
 }
 
 export const LATEST_LINK = "audit.jsonl"

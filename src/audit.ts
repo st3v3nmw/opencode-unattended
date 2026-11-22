@@ -1,10 +1,11 @@
-import type { Verdict } from "./verdict.ts"
+import type { Effect } from "./rules.ts"
 
 /**
  * Why the plugin decided instead of your opencode config or the judge. `unparsed` means there was nothing to judge,
  * `unavailable` that the judge failed recently and was not tried, `too_long` that the request was over the size limit,
- * and the two limits that requests it had been turning back reached the point where you see the next one. Every reason
- * is an `ask` (you were prompted) except `too_long`, which turns the request back to the agent unless a limit was reached.
+ * and `deny_limit` that the agent had been turned back enough times in a row that you see the next request. Every
+ * reason is an `ask` (you were prompted) except `too_long`, which turns the request back to the agent unless the limit
+ * was reached. `ask_limit` comes from earlier versions, which counted turn-backs and judge denies apart.
  */
 export type Reason = "unconfigured" | "error" | "unavailable" | "too_long" | "unparsed" | "ask_limit" | "deny_limit"
 
@@ -13,7 +14,6 @@ export const REASONS: readonly Reason[] = ["unconfigured", "error", "unavailable
 /**
  * One permission evaluation the plugin saw. `effect` is what happened to the request and `by` says who set it: your
  * opencode config (`config`), the judge model (`judge`), or this plugin (`plugin`, with a `reason`).
- * A judge `ask` is turned back to the agent as a deny, so its `effect` is `deny` and `verdict` keeps what the judge said.
  */
 export interface AuditEntry {
   time: number
@@ -21,7 +21,7 @@ export interface AuditEntry {
   directory: string
   action: string
   resources: readonly string[]
-  effect: Verdict
+  effect: Effect
   by: "config" | "judge" | "plugin"
   /** The judge's model, when it was consulted. */
   judge?: string
@@ -30,9 +30,7 @@ export interface AuditEntry {
   /** Milliseconds the judge took, when it was consulted. */
   latency?: number
   reason?: Reason
-  /** What the judge answered, when that differs from `effect`. */
-  verdict?: Verdict
-  /** The judge's one-sentence reason for not allowing, as the agent was told. */
+  /** The judge's one-sentence reason. For a deny it is what the agent was told. */
   why?: string
   /** The failure message, for `reason: "error"` only. */
   error?: string

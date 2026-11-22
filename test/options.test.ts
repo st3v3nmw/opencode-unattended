@@ -9,7 +9,7 @@ describe("parseOptions defaults", () => {
     expect(parseOptions({ judge: JUDGE })).toEqual({
       apiStyle: "openai",
       judge: JUDGE,
-      escalateAfter: 3,
+      escalateAfter: 5,
       dataDir: DEFAULT_DATA_DIR,
       auditLog: { enabled: true },
     })
@@ -29,12 +29,12 @@ describe("parseOptions defaults", () => {
 describe("parseOptions overrides", () => {
   test("every option can be set", () => {
     expect(
-      parseOptions({ judge: { ...JUDGE, escalateAfter: 5 }, dataDir: "/tmp/data", auditLog: { enabled: false } }),
-    ).toMatchObject({ escalateAfter: 5, dataDir: "/tmp/data", auditLog: { enabled: false } })
+      parseOptions({ judge: { ...JUDGE, escalateAfter: 7 }, dataDir: "/tmp/data", auditLog: { enabled: false } }),
+    ).toMatchObject({ escalateAfter: 7, dataDir: "/tmp/data", auditLog: { enabled: false } })
   })
 
   test("the options of earlier versions still work", () => {
-    expect(parseOptions({ judge: JUDGE, escalateAfter: 5 }).escalateAfter).toBe(5)
+    expect(parseOptions({ judge: JUDGE, escalateAfter: 7 }).escalateAfter).toBe(7)
     expect(parseOptions({ judge: JUDGE, auditDir: "/tmp/audit" })).toMatchObject({ dataDir: "/tmp/audit", auditLog: { enabled: true } })
     expect(parseOptions({ judge: JUDGE, auditDir: false }).auditLog.enabled).toBe(false)
   })

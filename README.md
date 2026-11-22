@@ -4,8 +4,7 @@ Automated permission approval for OpenCode, so your agent keeps working while yo
 
 When a request matches an `ask` rule, OpenCode stops and waits for you to respond. You can allow everything to get rid of the wait, but then nothing is checked. This plugin sends each `ask` to a second model, the reviewer, instead. It approves what is safe for the task at hand.
 
-In one real-world log of 3,905 requests, permission rules handled 3,382, the reviewer judged 523, and only one reached the user.
-
+In one real-world log of 3,905 requests, permission rules handled 3,382, the reviewer judged 523, and only one reached the user. With Claude Haiku and no prompt caching, reviews cost about $0.30 per thousand.
 ## Install
 
 Add the plugin to your OpenCode config, for example `~/.config/opencode/opencode.jsonc`. OpenCode fetches it from npm on the next start. It requires OpenCode 2.x and Bun.
@@ -15,7 +14,12 @@ Add the plugin to your OpenCode config, for example `~/.config/opencode/opencode
   "plugins": [
     {
       "package": "opencode-unattended",
-      "options": { "judge": { "model": "anthropic/claude-haiku-5.5", "baseURL": "https://openrouter.ai/api/v1" } }
+      "options": {
+        "judge": {
+          "model": "anthropic/claude-haiku-5.5",
+          "baseURL": "https://openrouter.ai/api/v1"
+        }
+      }
     }
   ]
 }
@@ -48,11 +52,11 @@ The last rule asks again for `.env` files, because it comes after the allows for
 
 OpenCode checks the permission rules you've configured first. A request one of them allows or denies never reaches the reviewer.
 
-The reviewer sees the request, your latest messages and the agent's recent tool calls. Your messages are the only instructions it takes. When it turns a request back, the agent gets the reason and reworks its approach or stops. If the reviewer can't decide, or turns the agent back several times in a row, you are asked instead.
+The reviewer sees the request, your latest messages and the agent's recent tool calls. Your messages are the only instructions it takes. It allows or denies. A denied request goes back to the agent with the reason, and the agent reworks its approach or stops. If the reviewer fails or can't be reached, or denies several requests in a row, you are asked instead.
 
 ## Your rules over time
 
-Every decision, yours and the reviewer's, goes to a local audit log. Install the CLI with `bun add -g opencode-unattended`, or run its commands with `bunx opencode-unattended`.
+Every decision, yours and the reviewer's, goes to a local audit log, with the reviewer's one-sentence reason. Install the CLI with `bun add -g opencode-unattended`, or run its commands with `bunx opencode-unattended`.
 
 `stats` shows how many requests your rules handled, what the reviewer allowed, turned back or failed on, and how long it took. For instance:
 
@@ -97,14 +101,14 @@ https://docs.python.org/*           9.7%          15.4%  https://docs.python.org
 https://github.com/golang/*         9.7%          15.4%  https://github.com/golang/go/issues/12345
 ```
 
-Every rule you add means one less request for the reviewer. `suggest` can't tell whether a rule is safe, so read each one before you paste it in. The bundled skill does that review with you: ask your agent which commands could become allow rules.
+Every rule you add means one less request for the reviewer. `suggest` can't tell whether a rule is safe, so read each one before you paste it in.
+
+The bundled `suggest-allow-rules` skill does that review for you. Ask your agent, for example, "which shell commands from the last week could become allow rules?" It checks each candidate and replies with rules to paste into your config, which it never edits itself. The CLI doesn't need to be installed.
 
 ## Options
 
-The `judge.*` options go inside `judge`. `auditLog` and `dataDir` sit next to it.
-
-- `judge.timeout`: how long one review may take. Default `"15s"`.
+- `judge.timeout`: how long one review may take. Default `"30s"`.
 - `judge.promptCache`: set to `{ "ttl": "1h" }` to have the endpoint cache the system prompt. `ttl` is a duration, and the provider decides which ones it accepts. Off unless set.
-- `judge.escalateAfter`: how many turn-backs in a row, or denies in a session, before you are asked. Default 3.
+- `judge.escalateAfter`: how many requests in a row the reviewer may deny before you are asked. An allow starts the count again. Default 5.
 - `auditLog.enabled`: `false` turns off the audit log, along with the suggestion tool and skill that read it. Default `true`.
 - `dataDir`: where the plugin keeps its files, including the audit log. Default `~/.local/state/opencode-unattended`.

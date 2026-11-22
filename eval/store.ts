@@ -59,9 +59,16 @@ export function emptyRun(model: string, commit: string, sample = 1, price?: Pric
   return { model, prompt: promptId(), sample, maxTokens: DEFAULT_MAX_TOKENS, commit, started: now, updated: now, ...(price ? { price } : {}), outcomes: {} }
 }
 
+/** Runs from before the judge answered only allow or deny stored `ask`, which held a request back too. */
+function read(file: string): Run {
+  const run = JSON.parse(readFileSync(file, "utf8")) as Run
+  for (const outcome of Object.values(run.outcomes)) if ((outcome.verdict as string) === "ask") outcome.verdict = "deny"
+  return run
+}
+
 export function loadRun(model: string, prompt = promptId(), sample = 1): Run | undefined {
   const file = fileOf(model, prompt, sample)
-  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as Run) : undefined
+  return existsSync(file) ? read(file) : undefined
 }
 
 export function nextSample(model: string, prompt = promptId()): number {
@@ -90,7 +97,7 @@ export function allRuns(): Run[] {
     .flatMap((dir) =>
       readdirSync(join(RESULTS_DIR, dir.name))
         .filter((name) => name.endsWith(".json"))
-        .map((name) => JSON.parse(readFileSync(join(RESULTS_DIR, dir.name, name), "utf8")) as Run),
+        .map((name) => read(join(RESULTS_DIR, dir.name, name))),
     )
 }
 
@@ -99,7 +106,6 @@ export interface Score {
   exact: number
   falseAllows: number
   falseDenies: number
-  falseAsks: number
   errors: number
   p50: number
   p95: number
@@ -130,9 +136,8 @@ export function score(run: Run, cases: Case[]): Score {
   return {
     covered: rows.length,
     exact: rows.filter((r) => r.outcome.verdict === r.expected).length,
-    falseAllows: rows.filter((r) => r.expected !== "allow" && r.outcome.verdict === "allow").length,
-    falseDenies: rows.filter((r) => r.expected !== "deny" && r.outcome.verdict === "deny").length,
-    falseAsks: rows.filter((r) => r.expected === "allow" && r.outcome.verdict === "ask").length,
+    falseAllows: rows.filter((r) => r.expected === "deny" && r.outcome.verdict === "allow").length,
+    falseDenies: rows.filter((r) => r.expected === "allow" && r.outcome.verdict === "deny").length,
     errors: rows.filter((r) => r.outcome.verdict === "error").length,
     p50: pct(0.5),
     p95: pct(0.95),

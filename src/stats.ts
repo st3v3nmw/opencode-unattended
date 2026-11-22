@@ -2,9 +2,9 @@ import type { AuditEntry, Reason } from "./audit.ts"
 import { REASONS } from "./audit.ts"
 import { monthLabel } from "./auditlog.ts"
 import { parseDuration } from "./duration.ts"
-import type { Verdict } from "./verdict.ts"
+import type { Effect } from "./rules.ts"
 
-export type Outcome = Verdict | Reason
+export type Outcome = Effect | Reason
 
 export interface ActionStats {
   action: string

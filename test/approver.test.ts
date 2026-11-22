@@ -25,6 +25,8 @@ const setup = (answers: Answer[] | Answer, options: Partial<ApproverOptions> = {
   return { approver: createApprover({ judge, ...options }), calls }
 }
 
+const SUFFIX = "Do not reach the same effect another way. If it is essential, stop and tell the user what you need and why."
+
 const shell = (...resources: string[]) => ({ action: "shell", resources })
 
 /** Runs distinct requests, so the verdict cache never answers for the judge. */
@@ -47,21 +49,12 @@ describe("approver", () => {
     const { approver } = setup({ verdict: "deny", reason: "That wipes the home directory." })
     const review = await approver.review("s", { action: "shell", resources: ["ls", "rm -rf ~"], line: "ls && rm -rf ~" })
     expect(review.decision).toBe("deny")
-    expect(review.message).toBe("That wipes the home directory. Do not attempt it or an equivalent.")
+    expect(review.message).toBe(`That wipes the home directory. ${SUFFIX}`)
   })
 
   test("a deny with no reason still says something", async () => {
     const { approver } = setup("deny")
-    expect((await approver.review("s", shell("rm -rf /"))).message).toBe("This is not something to do unattended. Do not attempt it or an equivalent.")
-  })
-
-  test("an ask goes back to the agent as a deny to rework, not to the user", async () => {
-    const { approver } = setup({ verdict: "ask", reason: "Use a branch instead of main." })
-    const review = await approver.review("s", shell("git push origin main"))
-    expect(review.decision).toBe("deny")
-    expect(review.message).toBe(
-      "Use a branch instead of main. This needs the user's approval. Do not reach the same effect another way; if it is essential, stop and tell the user what you need and why.",
-    )
+    expect((await approver.review("s", shell("rm -rf /"))).message).toBe(`This is not something to do unattended. ${SUFFIX}`)
   })
 
   test("asks when the judge throws, and says why", async () => {
@@ -105,58 +98,48 @@ describe("size cap", () => {
   })
 
   test("it counts toward the run of turned-back requests, so an agent that keeps sending them reaches the user", async () => {
-    const { approver } = setup("allow", { consecutiveLimit: 3 })
+    const { approver } = setup("allow", { escalateAfter: 3 })
     const decisions = []
     for (let i = 0; i < 4; i++) decisions.push((await approver.review("s", shell(long + i))).decision)
     expect(decisions).toEqual(["deny", "deny", "ask", "deny"])
   })
 
-  test("it does not count toward the deny total", async () => {
-    const { approver } = setup("allow", { consecutiveLimit: 99, denyLimit: 2 })
-    for (let i = 0; i < 5; i++) expect((await approver.review("s", shell(long + i))).decision).toBe("deny")
-  })
-
 })
 
 describe("what the user sees", () => {
-  test("requests the judge does not allow reach the user once enough have been turned back in a row", async () => {
-    const { approver } = setup("ask", { consecutiveLimit: 3, denyLimit: 99 })
+  test("requests reach the user once enough have been turned back in a row", async () => {
+    const { approver } = setup("deny", { escalateAfter: 3 })
     expect(await reviewAll(approver, 7)).toEqual(["deny", "deny", "ask", "deny", "deny", "ask", "deny"])
   })
 
   test("an allow resets the run", async () => {
-    const { approver } = setup(["ask", "ask", "allow", "ask", "ask"], { consecutiveLimit: 3, denyLimit: 99 })
+    const { approver } = setup(["deny", "deny", "allow", "deny", "deny"], { escalateAfter: 3 })
     expect(await reviewAll(approver, 5)).toEqual(["deny", "deny", "allow", "deny", "deny"])
   })
 
-  test("denies add up across allows, because an ls in between does not make an agent trustworthy", async () => {
-    const { approver } = setup(["deny", "allow", "deny", "allow", "deny", "allow"], { consecutiveLimit: 99, denyLimit: 3 })
-    expect(await reviewAll(approver, 6)).toEqual(["deny", "allow", "deny", "allow", "ask", "allow"])
+  test("denies with an allow between them never reach the user", async () => {
+    const { approver } = setup(["deny", "allow", "deny", "allow", "deny", "allow"], { escalateAfter: 2 })
+    expect(await reviewAll(approver, 6)).toEqual(["deny", "allow", "deny", "allow", "deny", "allow"])
   })
 
-  test("a deny counts toward the run as well as the total", async () => {
-    const { approver } = setup(["ask", "deny", "ask"], { consecutiveLimit: 3, denyLimit: 99 })
-    expect(await reviewAll(approver, 3)).toEqual(["deny", "deny", "ask"])
-  })
-
-  test("seeing the user resets both counts", async () => {
-    const { approver } = setup("deny", { consecutiveLimit: 99, denyLimit: 2 })
+  test("seeing the user starts the run again", async () => {
+    const { approver } = setup("deny", { escalateAfter: 2 })
     expect(await reviewAll(approver, 5)).toEqual(["deny", "ask", "deny", "ask", "deny"])
   })
 
   test("judge errors neither count nor reset", async () => {
-    const { approver } = setup(["ask", new Error("down"), "ask"], { consecutiveLimit: 2 })
+    const { approver } = setup(["deny", new Error("down"), "deny"], { escalateAfter: 2 })
     expect(await reviewAll(approver, 3)).toEqual(["deny", "ask", "ask"])
   })
 
   test("counts are per session", async () => {
-    const { approver } = setup("ask", { consecutiveLimit: 2 })
+    const { approver } = setup("deny", { escalateAfter: 2 })
     await reviewAll(approver, 1, "a")
     expect(await reviewAll(approver, 1, "b")).toEqual(["deny"])
   })
 
   test("the message to the user carries the latest reason, and no counts", async () => {
-    const { approver } = setup({ verdict: "deny", reason: "It wipes the disk." }, { consecutiveLimit: 1 })
+    const { approver } = setup({ verdict: "deny", reason: "It wipes the disk." }, { escalateAfter: 1 })
     const review = await approver.review("s", shell("dd if=/dev/zero of=/dev/sda"))
     expect(review.decision).toBe("ask")
     expect(review.message).toContain("It wipes the disk.")
@@ -168,9 +151,8 @@ describe("what the agent sees", () => {
   const MENTIONS = /in a row|limit|budget|streak|retry|try again|\d+ (requests|commands|times)/i
 
   test("no refusal mentions counts, limits, retries or the cache", async () => {
-    const { approver } = setup([{ verdict: "ask", reason: "Needs sign-off." }, { verdict: "deny", reason: "Too destructive." }], {
-      consecutiveLimit: 99,
-      denyLimit: 99,
+    const { approver } = setup([{ verdict: "deny", reason: "Needs sign-off." }, { verdict: "deny", reason: "Too destructive." }], {
+      escalateAfter: 99,
     })
     const messages = []
     for (const line of ["a", "b", "a", "b", "a"]) messages.push((await approver.review("s", shell(line))).message!)
@@ -179,7 +161,7 @@ describe("what the agent sees", () => {
   })
 
   test("a repeated request gets the same words as the first, without a second judge call", async () => {
-    const { approver, calls } = setup({ verdict: "ask", reason: "Needs sign-off." }, { consecutiveLimit: 99 })
+    const { approver, calls } = setup({ verdict: "deny", reason: "Needs sign-off." }, { escalateAfter: 99 })
     const first = await approver.review("s", shell("git push"))
     const second = await approver.review("s", shell("git push"))
     expect(second).toEqual(first)
@@ -187,7 +169,7 @@ describe("what the agent sees", () => {
   })
 
   test("a judge that would flip its answer cannot be retried into allowing", async () => {
-    const { approver, calls } = setup(["deny", "allow"], { consecutiveLimit: 99, denyLimit: 99 })
+    const { approver, calls } = setup(["deny", "allow"], { escalateAfter: 99 })
     const decisions = []
     for (let i = 0; i < 3; i++) decisions.push((await approver.review("s", shell("rm -rf build/..", "x"))).decision)
     expect(decisions).toEqual(["deny", "deny", "deny"])
@@ -195,14 +177,14 @@ describe("what the agent sees", () => {
   })
 
   test("a repeat still counts, so an agent that insists reaches the user", async () => {
-    const { approver } = setup("ask", { consecutiveLimit: 3 })
+    const { approver } = setup("deny", { escalateAfter: 3 })
     const decisions = []
     for (let i = 0; i < 3; i++) decisions.push((await approver.review("s", shell("git push"))).decision)
     expect(decisions).toEqual(["deny", "deny", "ask"])
   })
 
   test("a request the user approved is judged afresh when the agent repeats it, and others stay cached", async () => {
-    const { approver, calls } = setup("ask", { consecutiveLimit: 99 })
+    const { approver, calls } = setup("deny", { escalateAfter: 99 })
     await approver.review("s", shell("git push"))
     await approver.review("s", shell("npm publish"))
     expect(calls).toHaveLength(2)
@@ -213,7 +195,7 @@ describe("what the agent sees", () => {
   })
 
   test("a different request is judged afresh", async () => {
-    const { approver, calls } = setup("deny", { denyLimit: 99, consecutiveLimit: 99 })
+    const { approver, calls } = setup("deny", { escalateAfter: 99 })
     await approver.review("s", shell("a"))
     await approver.review("s", shell("b"))
     await approver.review("s", { action: "shell", resources: ["a"], line: "a && b" })
@@ -221,7 +203,7 @@ describe("what the agent sees", () => {
   })
 
   test("a new user message may cover what was refused, so the request is judged again", async () => {
-    const { approver, calls } = setup(["ask", "allow"])
+    const { approver, calls } = setup(["deny", "allow"])
     const said = (...messages: string[]) => ({ messages })
     expect((await approver.review("s", shell("git push"), said("fix the test"))).decision).toBe("deny")
     expect((await approver.review("s", shell("git push"), said("fix the test"))).decision).toBe("deny")
@@ -231,14 +213,14 @@ describe("what the agent sees", () => {
   })
 
   test("an allow is never cached", async () => {
-    const { approver, calls } = setup(["allow", "deny"], { denyLimit: 99 })
+    const { approver, calls } = setup(["allow", "deny"])
     expect((await approver.review("s", shell("x"))).decision).toBe("allow")
     expect((await approver.review("s", shell("x"))).decision).toBe("deny")
     expect(calls).toHaveLength(2)
   })
 
   test("the cache is per session", async () => {
-    const { approver, calls } = setup("deny", { denyLimit: 99, consecutiveLimit: 99 })
+    const { approver, calls } = setup("deny", { escalateAfter: 99 })
     await approver.review("a", shell("x"))
     await approver.review("b", shell("x"))
     expect(calls).toHaveLength(2)
@@ -276,7 +258,7 @@ describe("an unavailable judge", () => {
 
   test("it does not touch the counts", async () => {
     const { now, advance } = clock()
-    const { approver } = setup(["ask", new JudgeUnavailable("down"), "ask"], { consecutiveLimit: 2, cooldownMs: 10, now })
+    const { approver } = setup(["deny", new JudgeUnavailable("down"), "deny"], { escalateAfter: 2, cooldownMs: 10, now })
     const first = await approver.review("s", shell("a"))
     await approver.review("s", shell("b"))
     advance(11)
@@ -299,19 +281,17 @@ describe("audit", () => {
     expect(entry).toMatchObject({ sessionID: "s", action: "shell", resources: ["ls", "wc -l"], effect: "allow", by: "judge", judge: "fake" })
     expect(typeof entry.latency).toBe("number")
     expect(entry.reason).toBeUndefined()
-    expect(entry.verdict).toBeUndefined()
     expect(entry.error).toBeUndefined()
+  })
+
+  test("an allow keeps the judge's reason", async () => {
+    const entry = await run({ verdict: "allow", reason: "Read-only listing of the project." }, ["ls"])
+    expect(entry).toMatchObject({ effect: "allow", by: "judge", why: "Read-only listing of the project." })
   })
 
   test("a deny is recorded with the judge's reason", async () => {
     const entry = await run({ verdict: "deny", reason: "Too destructive." }, ["rm -rf /"])
     expect(entry).toMatchObject({ effect: "deny", by: "judge", judge: "fake", why: "Too destructive." })
-    expect(entry.verdict).toBeUndefined()
-  })
-
-  test("an ask turned back to the agent is a deny that keeps what the judge said", async () => {
-    const entry = await run({ verdict: "ask", reason: "Needs sign-off." }, ["git push"])
-    expect(entry).toMatchObject({ effect: "deny", by: "judge", verdict: "ask", why: "Needs sign-off." })
   })
 
   test("a failed judge call is a plugin ask with the error, judge and latency", async () => {
@@ -332,18 +312,15 @@ describe("audit", () => {
     const long = ["echo " + "x".repeat(MAX_TOOL_CALL_CHARS)]
     const entry = await run("allow", long)
     expect(entry).toMatchObject({ effect: "deny", by: "plugin", reason: "too_long" })
-    expect(entry).not.toHaveProperty("verdict")
     expect(entry).not.toHaveProperty("judge")
     expect(entry).not.toHaveProperty("latency")
-    expect(await run("allow", long, { consecutiveLimit: 1 })).toMatchObject({ effect: "ask", by: "plugin", reason: "ask_limit" })
+    expect(await run("allow", long, { escalateAfter: 1 })).toMatchObject({ effect: "ask", by: "plugin", reason: "deny_limit" })
   })
 
-  test("reaching a limit is a plugin ask that keeps the judge and latency", async () => {
-    const consecutive = await run("ask", ["git push"], { consecutiveLimit: 1 })
-    expect(consecutive).toMatchObject({ effect: "ask", by: "plugin", reason: "ask_limit", judge: "fake" })
-    const denies = await run("deny", ["rm -rf /"], { denyLimit: 1 })
-    expect(denies).toMatchObject({ effect: "ask", by: "plugin", reason: "deny_limit", judge: "fake" })
-    expect(typeof denies.latency).toBe("number")
+  test("reaching the limit is a plugin ask that keeps the judge and latency", async () => {
+    const entry = await run({ verdict: "deny", reason: "Too destructive." }, ["rm -rf /"], { escalateAfter: 1 })
+    expect(entry).toMatchObject({ effect: "ask", by: "plugin", reason: "deny_limit", judge: "fake", why: "Too destructive." })
+    expect(typeof entry.latency).toBe("number")
   })
 
   test("a request skipped because the judge is unavailable is a plugin ask with no judge", async () => {
@@ -357,7 +334,7 @@ describe("audit", () => {
 
   test("a cached refusal is recorded as a deny without a judge or latency", async () => {
     const entries: ApproverEntry[] = []
-    const { approver } = setup("ask", { audit: (e) => entries.push(e), consecutiveLimit: 99 })
+    const { approver } = setup("deny", { audit: (e) => entries.push(e), escalateAfter: 99 })
     await approver.review("s", shell("git push"))
     await approver.review("s", shell("git push"))
     expect(entries[1]).toMatchObject({ effect: "deny", by: "judge", resources: ["git push"] })
@@ -370,7 +347,7 @@ describe("audit", () => {
       await run("allow", ["ls"]),
       await run("deny", ["ls"]),
       await run(new Error("down"), ["ls"]),
-      await run("deny", ["rm -rf /"], { denyLimit: 1 }),
+      await run("deny", ["rm -rf /"], { escalateAfter: 1 }),
     ]
     for (const entry of entries) expect(entry).toMatchObject({ judge: "fake", provider: "fake.example" })
   })

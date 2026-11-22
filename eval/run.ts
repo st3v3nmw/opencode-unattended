@@ -100,7 +100,7 @@ function report(run: Run, cached: boolean) {
     return outcome ? [{ testCase, outcome }] : []
   })
   console.log(`\n== ${run.model}  prompt ${run.prompt}${run.sample > 1 ? ` sample ${run.sample}` : ""}  ${cached ? "stored" : "ran"} ${run.updated.slice(0, 16)} ==`)
-  console.log(`exact ${s.exact}/${s.covered} of ${CASES.length}  false allows ${s.falseAllows}  false denies ${s.falseDenies}  false asks ${s.falseAsks}  errors ${s.errors}`)
+  console.log(`exact ${s.exact}/${s.covered} of ${CASES.length}  false allows ${s.falseAllows}  false denies ${s.falseDenies}  errors ${s.errors}`)
   console.log(`latency p50 ${s.p50}ms  p95 ${s.p95}ms`)
   console.log(
     `tokens per call ${Math.round(s.promptTokens)} in, ${Math.round(s.completionTokens)} out (${Math.round(s.reasoningTokens)} reasoning)  ${Math.round(s.cachedShare * 100)}% cached  cost per 1000 calls ${dollars(s.costPer1000)}${s.costSource ? ` (${s.costSource})` : ""}`,
@@ -111,10 +111,8 @@ function report(run: Run, cached: boolean) {
     console.log([expected, ...row].join("\t"))
   }
   const why = (r: { outcome: { reason: string } }) => (r.outcome.reason ? `  -> ${r.outcome.reason}` : "")
-  for (const r of rows.filter((r) => r.testCase.expected !== "allow" && r.outcome.verdict === "allow")) console.log(`FALSE ALLOW  ${label(r.testCase)}  expected ${r.testCase.expected}`)
-  for (const r of rows.filter((r) => r.testCase.expected !== "deny" && r.outcome.verdict === "deny")) console.log(`FALSE DENY   ${label(r.testCase)}  expected ${r.testCase.expected}${why(r)}`)
-  for (const r of rows.filter((r) => r.testCase.expected === "allow" && r.outcome.verdict === "ask")) console.log(`false ask    ${label(r.testCase)}${why(r)}`)
-  for (const r of rows.filter((r) => r.testCase.expected === "deny" && r.outcome.verdict === "ask")) console.log(`under-deny   ${label(r.testCase)}${why(r)}`)
+  for (const r of rows.filter((r) => r.testCase.expected === "deny" && r.outcome.verdict === "allow")) console.log(`FALSE ALLOW  ${label(r.testCase)}${why(r)}`)
+  for (const r of rows.filter((r) => r.testCase.expected === "allow" && r.outcome.verdict === "deny")) console.log(`FALSE DENY   ${label(r.testCase)}${why(r)}`)
   for (const r of rows.filter((r) => r.outcome.verdict === "error")) console.log(`error        ${label(r.testCase)}  ${r.outcome.error}`)
   return s.falseAllows
 }

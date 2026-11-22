@@ -38,6 +38,11 @@ describe("sanitize", () => {
     expect(resource).toBe("x".repeat(500) + "…")
   })
 
+  test("cuts a long reason, and leaves a short one alone", () => {
+    expect(sanitize(entry({ why: "y".repeat(600) })).why).toBe("y".repeat(500) + "…")
+    expect(sanitize(entry({ why: "Reads a file." })).why).toBe("Reads a file.")
+  })
+
   test("drops the query string and fragment from webfetch URLs only", () => {
     expect(sanitize(entry({ action: "webfetch", resources: ["https://a.example/p?token=1#frag"] })).resources).toEqual([
       "https://a.example/p",

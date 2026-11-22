@@ -51,7 +51,7 @@ export function parseOptions(raw: Raw): Settings {
     apiStyle,
     judge,
     // TODO: remove the top-level escalateAfter, which judge.escalateAfter replaces.
-    escalateAfter: integer(escalateAfter ?? raw.escalateAfter, "judge.escalateAfter", 3, 1),
+    escalateAfter: integer(escalateAfter ?? raw.escalateAfter, "judge.escalateAfter", 5, 1),
     dataDir,
     auditLog: { enabled: enabled ?? auditDir !== false },
   }

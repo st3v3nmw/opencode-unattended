@@ -32,12 +32,7 @@ export default Plugin.define({
       audit = (entry) => write({ ...entry, directory: ctx.location.directory })
     }
 
-    const approver = createApprover({
-      judge,
-      audit,
-      consecutiveLimit: escalateAfter,
-      denyLimit: escalateAfter,
-    })
+    const approver = createApprover({ judge, audit, escalateAfter })
 
     const lines = new Map<string, string>()
     const asked = new Map<string, { sessionID: string; request: Request }>()

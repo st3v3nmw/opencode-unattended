@@ -12,7 +12,7 @@ if (runs.length === 0) {
   process.exit(0)
 }
 
-const header = ["model", "prompt", "n", "date", "commit", "exact", "FA", "FD", "F-ask", "err", "p50", "p95", "tok in/out", "cached", "$/1000"]
+const header = ["model", "prompt", "n", "date", "commit", "exact", "FA", "FD", "err", "p50", "p95", "tok in/out", "cached", "$/1000"]
 const rows = runs.map((run) => {
   const s = score(run, CASES)
   return [
@@ -24,7 +24,6 @@ const rows = runs.map((run) => {
     String(s.exact),
     String(s.falseAllows),
     String(s.falseDenies),
-    String(s.falseAsks),
     String(s.errors),
     `${s.p50}ms`,
     `${s.p95}ms`,

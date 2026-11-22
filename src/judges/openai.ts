@@ -10,7 +10,6 @@ import {
 import {
   DEFAULT_MAX_TOKENS,
   DEFAULT_TIMEOUT_MS,
-  MAX_REASON_CHARS,
   MAX_RETRY_AFTER_MS,
   MAX_RETRY_TIME_MS,
   RETRY_DELAYS_MS,
@@ -65,10 +64,11 @@ export function parseJudgement(content: unknown): Judgement {
   if (typeof content !== "string") throw new Error("judge response has no text content")
   const text = content.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")
   const parsed = JSON.parse(text) as { decision?: unknown; reason?: unknown } | null
-  const decision = parsed?.decision
+  // A model that still answers `ask` is holding the request back, which is a deny.
+  const decision = parsed?.decision === "ask" ? "deny" : parsed?.decision
   if (!isVerdict(decision)) throw new Error(`judge returned unknown decision: ${JSON.stringify(decision)}`)
-  const reason = typeof parsed?.reason === "string" ? parsed.reason.replace(/\s+/g, " ").trim().slice(0, MAX_REASON_CHARS) : ""
-  return { verdict: decision, reason: decision === "allow" ? "" : reason }
+  const reason = typeof parsed?.reason === "string" ? parsed.reason.replace(/\s+/g, " ").trim() : ""
+  return { verdict: decision, reason }
 }
 
 const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined)

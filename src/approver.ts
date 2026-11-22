@@ -1,20 +1,18 @@
 import type { ApproverEntry, Reason } from "./audit.ts"
 import { JudgeNotConfigured, JudgeUnavailable, type Judge, type JudgeContext, type Judgement, type Request } from "./judge.ts"
 import { BREAKER_COOLDOWN_MS, MAX_TOOL_CALL_CHARS, MAX_TRACKED, SNIPPET_CHARS } from "./limits.ts"
-import type { Verdict } from "./verdict.ts"
+import type { Effect } from "./rules.ts"
 
 export interface Review {
-  decision: Verdict
+  decision: Effect
   message?: string
 }
 
 export interface ApproverOptions {
   judge: Judge
   audit?: (entry: ApproverEntry) => void
-  /** After this many requests in a row that the judge does not allow, the next one goes to the user. */
-  consecutiveLimit?: number
-  /** After this many judge denies in a session, whatever came between them, the next one goes to the user. */
-  denyLimit?: number
+  /** After this many requests in a row turned back to the agent, the next one goes to the user. */
+  escalateAfter?: number
   /** How long requests skip a judge that just failed and go to the user instead. */
   cooldownMs?: number
   now?: () => number
@@ -26,7 +24,6 @@ export const TOO_LONG = "Split the work into smaller steps, or write the code to
 const hasDetail = (resources: readonly string[]) => resources.some((r) => r.trim() !== "" && r.trim() !== "*")
 
 interface Refusal {
-  verdict: "ask" | "deny"
   /** What the agent is told. */
   message: string
   /** A short reason for the user, if they end up seeing a request that was turned back. */
@@ -39,20 +36,14 @@ interface Cached extends Refusal {
 }
 
 interface Session {
-  /** Requests in a row the judge has not allowed. An allow resets it. */
-  streak: number
-  /** Judge denies since the user last saw a request. Allows do not reset it. */
-  denies: number
+  /** Requests turned back in a row. An allow resets it, and so does the user seeing a request. */
+  consecutiveDenies: number
   turnedBack: Map<string, Cached>
 }
 
-const refusalFor = (verdict: "ask" | "deny", why: string): Refusal => ({
-  verdict,
+const refusalFor = (why: string): Refusal => ({
   why,
-  message:
-    verdict === "ask"
-      ? `${why ? `${why} ` : ""}This needs the user's approval. Do not reach the same effect another way; if it is essential, stop and tell the user what you need and why.`
-      : `${why || "This is not something to do unattended."} Do not attempt it or an equivalent.`,
+  message: `${why || "This is not something to do unattended."} Do not reach the same effect another way. If it is essential, stop and tell the user what you need and why.`,
 })
 
 /**
@@ -63,8 +54,7 @@ const refusalFor = (verdict: "ask" | "deny", why: string): Refusal => ({
 export function createApprover({
   judge,
   audit,
-  consecutiveLimit = 3,
-  denyLimit = 3,
+  escalateAfter = 5,
   cooldownMs = BREAKER_COOLDOWN_MS,
   now = Date.now,
 }: ApproverOptions) {
@@ -76,7 +66,7 @@ export function createApprover({
 
   const sessionOf = (sessionID: string) => {
     let session = sessions.get(sessionID)
-    if (!session) sessions.set(sessionID, (session = { streak: 0, denies: 0, turnedBack: new Map() }))
+    if (!session) sessions.set(sessionID, (session = { consecutiveDenies: 0, turnedBack: new Map() }))
     return session
   }
 
@@ -88,7 +78,7 @@ export function createApprover({
 
     async review(sessionID: string, request: Request, { messages = [], recent = [] }: Partial<JudgeContext> = {}): Promise<Review> {
       const noun = request.action === "shell" ? "command" : "request"
-      const write = (effect: Verdict, extra: Partial<ApproverEntry>) =>
+      const write = (effect: Effect, extra: Partial<ApproverEntry>) =>
         audit?.({
           time: now(),
           sessionID,
@@ -113,14 +103,10 @@ export function createApprover({
        * `info` says which judge was consulted, and goes in whichever entry is written; `entry` is only for the refusal.
        */
       const turnBack = (refusal: Refusal, info: Partial<ApproverEntry>, entry: Partial<ApproverEntry>): Review => {
-        session.streak++
-        if (refusal.verdict === "deny") session.denies++
-        const reason: Reason | undefined =
-          session.denies >= denyLimit ? "deny_limit" : session.streak >= consecutiveLimit ? "ask_limit" : undefined
-        if (reason) {
-          session.streak = 0
-          session.denies = 0
-          plugin(reason, info)
+        session.consecutiveDenies++
+        if (session.consecutiveDenies >= escalateAfter) {
+          session.consecutiveDenies = 0
+          plugin("deny_limit", { ...info, ...(refusal.why ? { why: refusal.why } : {}) })
           return {
             decision: "ask",
             message: `opencode-unattended turned back recent requests, and is asking you about this one.${refusal.why ? ` ${refusal.why}` : ""}`,
@@ -129,14 +115,11 @@ export function createApprover({
         write("deny", { ...info, ...entry })
         return { decision: "deny", message: refusal.message }
       }
-      const entryFor = ({ verdict, why }: Refusal): Partial<ApproverEntry> => ({
-        ...(verdict === "ask" ? { verdict: "ask" as const } : {}),
-        ...(why ? { why } : {}),
-      })
+      const entryFor = ({ why }: { why: string }): Partial<ApproverEntry> => (why ? { why } : {})
 
       const text = request.line ?? request.resources.join(" ; ")
       if (text.length > MAX_TOOL_CALL_CHARS) {
-        return turnBack({ verdict: "ask", message: TOO_LONG, why: "It was too long to review." }, {}, { by: "plugin", reason: "too_long" })
+        return turnBack({ message: TOO_LONG, why: "It was too long to review." }, {}, { by: "plugin", reason: "too_long" })
       }
 
       const key = keyOf(request)
@@ -170,12 +153,12 @@ export function createApprover({
       const info = { ...consulted, latency: now() - started }
 
       if (judgement.verdict === "allow") {
-        session.streak = 0
-        write("allow", info)
+        session.consecutiveDenies = 0
+        write("allow", { ...info, ...entryFor({ why: judgement.reason }) })
         return { decision: "allow" }
       }
 
-      const refusal = refusalFor(judgement.verdict, judgement.reason)
+      const refusal = refusalFor(judgement.reason)
       const review = turnBack(refusal, info, entryFor(refusal))
       if (review.decision === "deny") {
         session.turnedBack.set(key, { ...refusal, basis })
