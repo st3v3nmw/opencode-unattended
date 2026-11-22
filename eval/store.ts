@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import type { Usage } from "../src/judge.ts"
-import { RESPONSE_FORMAT } from "../src/judges/openai.ts"
-import { DEFAULT_MAX_TOKENS } from "../src/limits.ts"
-import { SYSTEM_PROMPT, renderRequest } from "../src/prompt.ts"
-import type { Verdict } from "../src/verdict.ts"
+import type { Usage } from "../src/judge/judge.ts"
+import { RESPONSE_FORMAT } from "../src/judge/openai.ts"
+import { DEFAULT_MAX_TOKENS } from "../src/judge/limits.ts"
+import { SYSTEM_PROMPT, renderRequest } from "../src/judge/prompt.ts"
+import type { Verdict } from "../src/judge/judge.ts"
 import type { Case } from "./cases.ts"
 
 export const RESULTS_DIR = process.env.EVAL_RESULTS_DIR ?? join(import.meta.dir, "results")

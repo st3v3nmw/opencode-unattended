@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createApprover, TOO_LONG, type ApproverOptions } from "../src/approver.ts"
-import type { ApproverEntry } from "../src/audit.ts"
-import { JudgeNotConfigured, JudgeUnavailable, type Judge, type JudgeContext, type Judgement, type Request } from "../src/judge.ts"
-import { MAX_TOOL_CALL_CHARS } from "../src/limits.ts"
-import type { Verdict } from "../src/verdict.ts"
+import type { ApproverEntry } from "../src/audit/audit.ts"
+import { JudgeNotConfigured, JudgeUnavailable, type Judge, type JudgeContext, type Judgement, type Request, type Verdict } from "../src/judge/judge.ts"
+import { MAX_TOOL_CALL_CHARS } from "../src/judge/limits.ts"
 
 type Answer = Verdict | Judgement | Error
 

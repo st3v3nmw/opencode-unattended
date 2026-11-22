@@ -1,5 +1,5 @@
-import { DEFAULT_DATA_DIR, readEntries } from "../src/auditlog.ts"
-import { byJudge, formatActions, formatJudges, formatMonthly, monthly, parseWhen, summarize, top } from "../src/stats.ts"
+import { DEFAULT_DATA_DIR, readEntries } from "../src/audit/audit.ts"
+import { byJudge, formatActions, formatJudges, formatMonthly, monthly, parseWhen, summarize, top } from "../src/audit/stats.ts"
 
 const USAGE = `usage: opencode-unattended stats [--since 180d] [--until DATE] [--project TEXT] [--top ask|deny|error] [--limit N] [--data-dir PATH]
 

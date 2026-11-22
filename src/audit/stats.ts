@@ -1,8 +1,5 @@
-import type { AuditEntry, Reason } from "./audit.ts"
-import { REASONS } from "./audit.ts"
-import { monthLabel } from "./auditlog.ts"
-import { parseDuration } from "./duration.ts"
-import type { Effect } from "./rules.ts"
+import { REASONS, monthLabel, type AuditEntry, type Effect, type Reason } from "./audit.ts"
+import { parseDuration } from "../duration.ts"
 
 export type Outcome = Effect | Reason
 

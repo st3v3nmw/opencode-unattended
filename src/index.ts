@@ -1,16 +1,15 @@
 import { Plugin } from "@opencode/plugin"
 import { createApprover } from "./approver.ts"
-import type { ApproverEntry } from "./audit.ts"
-import { createWriter, prune, readEntries } from "./auditlog.ts"
-import { recentCommands } from "./history.ts"
-import { createJudge, type Judge, type Request } from "./judge.ts"
-import "./judges/openai.ts"
-import { recentToolCalls } from "./calls.ts"
-import { MAX_TRACKED, RECENT_TOOL_CALLS, RECENT_TOOL_CALL_CHARS, USER_MESSAGES, USER_MESSAGE_CHARS } from "./limits.ts"
-import { lastUserMessages } from "./messages.ts"
+import { createWriter, prune, readEntries, type ApproverEntry } from "./audit/audit.ts"
+import { recentCommands } from "./suggest/history.ts"
+import { createJudge, type Judge, type Request } from "./judge/judge.ts"
+import "./judge/openai.ts"
+import { lastUserMessages, recentToolCalls } from "./judge/context.ts"
+import { MAX_TRACKED, RECENT_TOOL_CALLS, RECENT_TOOL_CALL_CHARS, USER_MESSAGES, USER_MESSAGE_CHARS } from "./judge/limits.ts"
+
 import { parseOptions, type Settings } from "./options.ts"
-import { SUGGEST_SKILL } from "./suggest-skill.ts"
-import { suggestTool } from "./suggest-tool.ts"
+import { SUGGEST_SKILL } from "./suggest/skill.ts"
+import { suggestTool } from "./suggest/tool.ts"
 
 export default Plugin.define({
   id: "unattended",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { AuditEntry } from "../src/audit.ts"
-import { SUGGEST_TOOL, suggestTool } from "../src/suggest-tool.ts"
+import type { AuditEntry } from "../../src/audit/audit.ts"
+import { SUGGEST_TOOL, suggestTool } from "../../src/suggest/tool.ts"
 
 const DAY = 86_400_000
 const NOW = 100 * DAY

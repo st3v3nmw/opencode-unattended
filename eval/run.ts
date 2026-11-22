@@ -1,6 +1,6 @@
-import { JudgeNotConfigured, JudgeUnavailable } from "../src/judge.ts"
-import { DEFAULT_CACHE_TTL, createOpenAIJudge, hostOf } from "../src/judges/openai.ts"
-import { VERDICTS } from "../src/verdict.ts"
+import { JudgeNotConfigured, JudgeUnavailable } from "../src/judge/judge.ts"
+import { DEFAULT_CACHE_TTL, createOpenAIJudge, hostOf } from "../src/judge/openai.ts"
+import { VERDICTS } from "../src/judge/judge.ts"
 import { CASES, type Case } from "./cases.ts"
 import { caseId, dollars, emptyRun, loadRun, nextSample, saveRun, score, type Price, type Run } from "./store.ts"
 

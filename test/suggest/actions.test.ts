@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { AuditEntry } from "../src/audit.ts"
-import type { ActionRule, ShellRule } from "../src/rules.ts"
-import { formatSuggestions } from "../src/suggest.ts"
-import { reviewedCounts, reviewedSessions, shellResolver, suggestAll, suggestWebfetch, withoutUnresolved } from "../src/suggest-actions.ts"
+import type { AuditEntry } from "../../src/audit/audit.ts"
+import type { ActionRule, ShellRule } from "../../src/suggest/rules.ts"
+import { formatSuggestions } from "../../src/suggest/suggest.ts"
+import { reviewedCounts, reviewedSessions, shellResolver, suggestAll, suggestWebfetch, withoutUnresolved } from "../../src/suggest/actions.ts"
 
 let n = 0
 const judged = (action: string, effect: AuditEntry["effect"], ...resources: string[]): AuditEntry => ({

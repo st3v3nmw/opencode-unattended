@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isSpecific, lastMatch, matches } from "../src/rules.ts"
+import { isSpecific, lastMatch, matches } from "../../src/suggest/rules.ts"
 
 describe("matches", () => {
   test.each([

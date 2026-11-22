@@ -1,7 +1,7 @@
-import type { AuditEntry } from "./audit.ts"
-import type { ActionRule, Effect } from "./rules.ts"
+import type { AuditEntry, Effect } from "../audit/audit.ts"
+import type { ActionRule } from "./rules.ts"
 import { formatSuggestions } from "./suggest.ts"
-import { reviewedCounts, reviewedSessions, shellResolver, suggestAll, withoutUnresolved, type Resolver } from "./suggest-actions.ts"
+import { reviewedCounts, reviewedSessions, shellResolver, suggestAll, withoutUnresolved, type Resolver } from "./actions.ts"
 
 export const SUGGEST_TOOL = "unattended_suggest"
 

@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { DEFAULT_DATA_DIR, readEntries } from "../src/auditlog.ts"
-import { readRules } from "../src/config.ts"
-import { DEFAULT_DB, readHistory } from "../src/history-db.ts"
-import { parseWhen } from "../src/stats.ts"
-import { formatSuggestions } from "../src/suggest.ts"
-import { ACTIONS, reviewedCounts, reviewedSessions, shellResolver, suggestAll, withoutUnresolved } from "../src/suggest-actions.ts"
+import { DEFAULT_DATA_DIR, readEntries } from "../src/audit/audit.ts"
+import { readRules } from "../src/suggest/config.ts"
+import { DEFAULT_DB, readHistory } from "../src/suggest/history.ts"
+import { parseWhen } from "../src/audit/stats.ts"
+import { formatSuggestions } from "../src/suggest/suggest.ts"
+import { ACTIONS, reviewedCounts, reviewedSessions, shellResolver, suggestAll, withoutUnresolved } from "../src/suggest/actions.ts"
 
 const DAY_MS = 86_400_000
 const GLOBAL_CONFIG = join(homedir(), ".config", "opencode", "opencode.jsonc")

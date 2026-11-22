@@ -1,5 +1,5 @@
-import { DEFAULT_DATA_DIR } from "./auditlog.ts"
-import type { JudgeOptions } from "./judge.ts"
+import { DEFAULT_DATA_DIR } from "./audit/audit.ts"
+import type { JudgeOptions } from "./judge/judge.ts"
 
 export const DEFAULT_API_STYLE = "openai"
 

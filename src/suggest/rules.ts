@@ -1,4 +1,4 @@
-export type Effect = "allow" | "ask" | "deny"
+import type { Effect } from "../audit/audit.ts"
 
 export interface ShellRule {
   resource: string

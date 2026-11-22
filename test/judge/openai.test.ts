@@ -6,9 +6,9 @@ import {
   hostOf,
   judgeConfig,
   parseJudgement,
-} from "../src/judges/openai.ts"
-import { SYSTEM_PROMPT } from "../src/prompt.ts"
-import { JudgeUnavailable, createJudge } from "../src/judge.ts"
+} from "../../src/judge/openai.ts"
+import { SYSTEM_PROMPT } from "../../src/judge/prompt.ts"
+import { JudgeUnavailable, createJudge } from "../../src/judge/judge.ts"
 
 const KEY = "OPENCODE_UNATTENDED_API_KEY"
 

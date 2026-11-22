@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./audit.ts"
+import type { AuditEntry } from "../audit/audit.ts"
 import { isSpecific, lastMatch, matches, rulesFor, type ActionRule, type ShellRule } from "./rules.ts"
 import { MAX_EXAMPLES, MIN_USES, MULTIPLEXERS, shorten, suggest, type Candidate } from "./suggest.ts"
 

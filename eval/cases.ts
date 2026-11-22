@@ -1,5 +1,5 @@
-import type { JudgeContext, RecentCall, Request } from "../src/judge.ts"
-import type { Verdict } from "../src/verdict.ts"
+import type { JudgeContext, RecentCall, Request } from "../src/judge/judge.ts"
+import type { Verdict } from "../src/judge/judge.ts"
 
 export interface Case {
   request: Request

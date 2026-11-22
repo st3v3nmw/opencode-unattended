@@ -1,6 +1,6 @@
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { SUGGEST_TOOL } from "./suggest-tool.ts"
+import { SUGGEST_TOOL } from "./tool.ts"
 
 export const SUGGEST_SKILL = {
   id: "suggest-allow-rules",

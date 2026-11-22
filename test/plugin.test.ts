@@ -2,10 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { readEntries } from "../src/auditlog.ts"
+import { readEntries } from "../src/audit/audit.ts"
 import plugin from "../src/index.ts"
-import type { JudgeContext, Request } from "../src/judge.ts"
-import { registerJudge } from "../src/judge.ts"
+import { registerJudge, type JudgeContext, type Request } from "../src/judge/judge.ts"
 
 const seen: { request: Request; context: JudgeContext }[] = []
 

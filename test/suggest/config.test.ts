@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseJsonc, permissionRules, readRules, readShellRules, shellRules } from "../src/config.ts"
+import { parseJsonc, permissionRules, readRules, readShellRules, shellRules } from "../../src/suggest/config.ts"
 
 describe("parseJsonc", () => {
   test("reads comments and trailing commas", () => {

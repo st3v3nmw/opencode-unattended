@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./audit.ts"
+import type { AuditEntry } from "../audit/audit.ts"
 import { isSpecific, lastMatch, matches, type ShellRule } from "./rules.ts"
 
 export const MIN_USES = 3

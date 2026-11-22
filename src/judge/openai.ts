@@ -6,16 +6,16 @@ import {
   type JudgeOptions,
   type Judgement,
   type Usage,
-} from "../judge.ts"
+} from "./judge.ts"
 import {
   DEFAULT_MAX_TOKENS,
   DEFAULT_TIMEOUT_MS,
   MAX_RETRY_AFTER_MS,
   MAX_RETRY_TIME_MS,
   RETRY_DELAYS_MS,
-} from "../limits.ts"
-import { SYSTEM_PROMPT, renderRequest } from "../prompt.ts"
-import { VERDICTS, isVerdict } from "../verdict.ts"
+} from "./limits.ts"
+import { SYSTEM_PROMPT, renderRequest } from "./prompt.ts"
+import { VERDICTS, isVerdict } from "./judge.ts"
 
 export const DEFAULT_CACHE_TTL = "1h"
 

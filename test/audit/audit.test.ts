@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, readdirSync, readlinkSync, statSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import type { AuditEntry } from "../src/audit.ts"
-import { createWriter, monthFile, prune, readEntries, sanitize } from "../src/auditlog.ts"
+import { createWriter, monthFile, prune, readEntries, sanitize, type AuditEntry } from "../../src/audit/audit.ts"
 
 const at = (iso: string) => Date.parse(iso)
 

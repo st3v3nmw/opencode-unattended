@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs"
-import { rulesFor, type ActionRule, type Effect, type ShellRule } from "./rules.ts"
+import type { Effect } from "../audit/audit.ts"
+import { rulesFor, type ActionRule, type ShellRule } from "./rules.ts"
 
 const EFFECTS: readonly unknown[] = ["allow", "ask", "deny"]
 

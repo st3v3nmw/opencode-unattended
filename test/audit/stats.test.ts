@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { AuditEntry } from "../src/audit.ts"
-import { byJudge, formatActions, formatJudges, monthly, parseWhen, summarize, top } from "../src/stats.ts"
+import type { AuditEntry } from "../../src/audit/audit.ts"
+import { byJudge, formatActions, formatJudges, monthly, parseWhen, summarize, top } from "../../src/audit/stats.ts"
 
 const at = (iso: string) => Date.parse(iso)
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_DATA_DIR } from "../src/auditlog.ts"
+import { DEFAULT_DATA_DIR } from "../src/audit/audit.ts"
 import { parseOptions } from "../src/options.ts"
 
 const JUDGE = { model: "a/b", baseURL: "https://x.example/v1" }

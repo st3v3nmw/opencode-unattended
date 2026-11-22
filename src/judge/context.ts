@@ -1,5 +1,20 @@
 import type { RecentCall } from "./judge.ts"
-import { truncate } from "./messages.ts"
+
+export function truncate(text: string, maxChars: number): string {
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text
+}
+
+export function lastUserMessages(
+  messages: readonly { type?: unknown; text?: unknown }[],
+  count: number,
+  maxChars: number,
+): string[] {
+  if (count <= 0) return []
+  return messages
+    .flatMap((m) => (m.type === "user" && typeof m.text === "string" && m.text.trim() ? [m.text.trim()] : []))
+    .slice(-count)
+    .map((text) => truncate(text, maxChars))
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
 

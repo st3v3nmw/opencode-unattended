@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { AuditEntry } from "../src/audit.ts"
-import type { ShellRule } from "../src/rules.ts"
-import { MIN_USES, formatSuggestions, shorten, suggest } from "../src/suggest.ts"
+import type { AuditEntry } from "../../src/audit/audit.ts"
+import type { ShellRule } from "../../src/suggest/rules.ts"
+import { MIN_USES, formatSuggestions, shorten, suggest } from "../../src/suggest/suggest.ts"
 
 let n = 0
 const judged = (effect: AuditEntry["effect"], ...resources: string[]): AuditEntry => ({

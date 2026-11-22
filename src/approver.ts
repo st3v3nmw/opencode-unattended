@@ -1,7 +1,6 @@
-import type { ApproverEntry, Reason } from "./audit.ts"
-import { JudgeNotConfigured, JudgeUnavailable, type Judge, type JudgeContext, type Judgement, type Request } from "./judge.ts"
-import { BREAKER_COOLDOWN_MS, MAX_TOOL_CALL_CHARS, MAX_TRACKED, SNIPPET_CHARS } from "./limits.ts"
-import type { Effect } from "./rules.ts"
+import type { ApproverEntry, Effect, Reason } from "./audit/audit.ts"
+import { JudgeNotConfigured, JudgeUnavailable, type Judge, type JudgeContext, type Judgement, type Request } from "./judge/judge.ts"
+import { BREAKER_COOLDOWN_MS, MAX_TOOL_CALL_CHARS, MAX_TRACKED, SNIPPET_CHARS } from "./judge/limits.ts"
 
 export interface Review {
   decision: Effect
