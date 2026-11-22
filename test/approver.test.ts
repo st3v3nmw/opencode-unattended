@@ -328,17 +328,14 @@ describe("audit", () => {
     expect(entry).not.toHaveProperty("error")
   })
 
-  test("an over-long command is turned back by the plugin without reaching the judge", async () => {
-    const entry = await run("allow", ["echo " + "x".repeat(MAX_TOOL_CALL_CHARS)])
+  test("an over-long command is a plugin deny without a judge, or a plugin ask for the limit once it is reached", async () => {
+    const long = ["echo " + "x".repeat(MAX_TOOL_CALL_CHARS)]
+    const entry = await run("allow", long)
     expect(entry).toMatchObject({ effect: "deny", by: "plugin", reason: "too_long" })
     expect(entry).not.toHaveProperty("verdict")
     expect(entry).not.toHaveProperty("judge")
     expect(entry).not.toHaveProperty("latency")
-  })
-
-  test("an over-long command that reaches the limit is a plugin ask for the limit, not for its length", async () => {
-    const entry = await run("allow", ["echo " + "x".repeat(MAX_TOOL_CALL_CHARS)], { consecutiveLimit: 1 })
-    expect(entry).toMatchObject({ effect: "ask", by: "plugin", reason: "ask_limit" })
+    expect(await run("allow", long, { consecutiveLimit: 1 })).toMatchObject({ effect: "ask", by: "plugin", reason: "ask_limit" })
   })
 
   test("reaching a limit is a plugin ask that keeps the judge and latency", async () => {

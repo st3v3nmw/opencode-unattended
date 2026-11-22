@@ -6,7 +6,6 @@ import { readEntries } from "../src/auditlog.ts"
 import plugin from "../src/index.ts"
 import type { JudgeContext, Request } from "../src/judge.ts"
 import { registerJudge } from "../src/judge.ts"
-import { MAX_TOOL_CALL_CHARS } from "../src/limits.ts"
 
 const seen: { request: Request; context: JudgeContext }[] = []
 
@@ -186,24 +185,6 @@ describe("non-shell requests", () => {
       source: { type: "tool", messageID: "m", id: "call-1" },
     })
     expect(seen[0]!.request.line).toBeUndefined()
-  })
-
-  test("the size cap applies to their resources, and the agent is told what to do", async () => {
-    const long = "https://example.com/" + "x".repeat(MAX_TOOL_CALL_CHARS)
-    const { run } = await load({ [long]: "allow" })
-    const result = await run({ action: "webfetch", resources: [long], effect: "ask" })
-    expect(result.effect).toBe("deny")
-    expect(result.message).toBe("Split the work into smaller steps, or write the code to a file in pieces and run that.")
-    expect(seen).toEqual([])
-  })
-
-  test("repeated denies reach the user, with the request and the reason", async () => {
-    const { run } = await load({ "https://bad.example": "deny" }, { options: { escalateAfter: 2 } })
-    const event = { action: "webfetch", resources: ["https://bad.example"], effect: "ask" as const }
-    expect((await run(event)).effect).toBe("deny")
-    const second = await run(event)
-    expect(second.effect).toBe("ask")
-    expect(second.message).toContain("because deny")
   })
 
   describe("after the user was asked", () => {

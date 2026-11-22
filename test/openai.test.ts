@@ -112,52 +112,37 @@ describe("openai judge", () => {
     expect((await judgeWith(body(undefined)).decide(request, none)).usage).toBeUndefined()
   })
 
-  test("prompt caching is off by default: a plain system prompt and no session id", async () => {
-    let sent: { session_id?: string; messages: { role: string; content: unknown }[] } | undefined
+  type Sent = { session_id?: string; messages: { role: string; content: any }[] }
+  const sentWith = async (extra: Parameters<typeof judgeWith>[2]) => {
+    let sent: Sent | undefined
     const spy = (async (_url: string, init: RequestInit) => {
       sent = JSON.parse(init.body as string)
       return reply('{"decision":"allow","reason":""}')
     }) as unknown as typeof fetch
-    await judgeWith(spy).decide({ action: "shell", resources: ["ls"] }, none)
-    expect(typeof sent!.messages[0]!.content).toBe("string")
-    expect(sent!.session_id).toBeUndefined()
+    await judgeWith(spy, FULL_ENV, extra).decide({ action: "shell", resources: ["ls"] }, none)
+    return sent!
+  }
+
+  test.each([
+    ["by default", undefined],
+    ["when disabled, whatever the ttl", { promptCache: { enabled: false, ttl: "1h" as const } }],
+  ])("prompt caching is off %s: a plain system prompt and no session id", async (_label, extra) => {
+    const sent = await sentWith(extra)
+    expect(typeof sent.messages[0]!.content).toBe("string")
+    expect(sent.session_id).toBeUndefined()
     expect(JSON.stringify(sent)).not.toContain("cache_control")
   })
 
-  test("with promptCache the system prompt carries a cache breakpoint, and calls share a session id", async () => {
-    let sent: { session_id?: string; messages: { role: string; content: unknown }[] } | undefined
-    const spy = (async (_url: string, init: RequestInit) => {
-      sent = JSON.parse(init.body as string)
-      return reply('{"decision":"allow","reason":""}')
-    }) as unknown as typeof fetch
-    await judgeWith(spy, FULL_ENV, { promptCache: { enabled: true, ttl: "1h" } }).decide({ action: "shell", resources: ["ls"] }, none)
-    expect(sent!.session_id).toBe(CACHE_SESSION_ID)
-    expect(sent!.messages[0]).toEqual({
+  test("with promptCache the system prompt carries a cache breakpoint, a 5m ttl sends it bare, and calls share a session id", async () => {
+    const hour = await sentWith({ promptCache: { enabled: true, ttl: "1h" } })
+    expect(hour.session_id).toBe(CACHE_SESSION_ID)
+    expect(hour.messages[0]).toEqual({
       role: "system",
       content: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral", ttl: "1h" } }],
     })
-    expect(typeof sent!.messages[1]!.content).toBe("string")
-  })
-
-  test("a 5m ttl sends the bare breakpoint, which is the provider's own default", async () => {
-    let sent: { messages: { content: { cache_control: unknown }[] }[] } | undefined
-    const spy = (async (_url: string, init: RequestInit) => {
-      sent = JSON.parse(init.body as string)
-      return reply('{"decision":"allow","reason":""}')
-    }) as unknown as typeof fetch
-    await judgeWith(spy, FULL_ENV, { promptCache: { enabled: true, ttl: "5m" } }).decide({ action: "shell", resources: ["ls"] }, none)
-    expect(sent!.messages[0]!.content[0]!.cache_control).toEqual({ type: "ephemeral" })
-  })
-
-  test("a disabled promptCache sends a plain prompt whatever its ttl", async () => {
-    let sent: { session_id?: string; messages: { content: unknown }[] } | undefined
-    const spy = (async (_url: string, init: RequestInit) => {
-      sent = JSON.parse(init.body as string)
-      return reply('{"decision":"allow","reason":""}')
-    }) as unknown as typeof fetch
-    await judgeWith(spy, FULL_ENV, { promptCache: { enabled: false, ttl: "1h" } }).decide({ action: "shell", resources: ["ls"] }, none)
-    expect(typeof sent!.messages[0]!.content).toBe("string")
-    expect(sent!.session_id).toBeUndefined()
+    expect(typeof hour.messages[1]!.content).toBe("string")
+    const five = await sentWith({ promptCache: { enabled: true, ttl: "5m" } })
+    expect(five.messages[0]!.content[0].cache_control).toEqual({ type: "ephemeral" })
   })
 
   test("reports cache reads and writes from the usage details", async () => {
@@ -411,8 +396,8 @@ describe("retries", () => {
     expect(sleeps).toEqual([60_000])
   })
 
-  test.each([503])("a %i is retried like a rate limit", async (status) => {
-    const { sleeps, result } = run([limited(undefined, status), allow()])
+  test("a 503 is retried like a rate limit", async () => {
+    const { sleeps, result } = run([limited(undefined, 503), allow()])
     expect((await result).verdict).toBe("allow")
     expect(sleeps).toEqual([15_000])
   })

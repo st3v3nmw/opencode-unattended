@@ -1,10 +1,31 @@
 {
   "name": "opencode-unattended",
   "version": "0.1.0",
+  "description": "opencode plugin that lets an LLM reviewer answer permission prompts so the agent can keep working while you are away",
+  "keywords": ["opencode", "opencode-plugin", "permissions", "agent"],
   "type": "module",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "homepage": "https://github.com/st3v3nmw/opencode-unattended#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/st3v3nmw/opencode-unattended.git"
+  },
+  "bugs": {
+    "url": "https://github.com/st3v3nmw/opencode-unattended/issues"
+  },
+  "bin": {
+    "opencode-unattended": "./cli/index.ts",
+    "unattended": "./cli/index.ts"
+  },
+  "files": ["src", "cli", "README.md", "LICENSE"],
+  "engines": {
+    "bun": ">=1.2"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "test": "bun test",
@@ -12,8 +33,11 @@
     "eval": "bun run eval/run.ts",
     "eval:history": "bun run eval/history.ts",
     "eval:diff": "bun run eval/diff.ts",
-    "stats": "bun run scripts/stats.ts",
-    "suggest": "bun run scripts/suggest.ts"
+    "stats": "bun run cli/stats.ts",
+    "suggest": "bun run cli/suggest.ts"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "2.3.0"
   },
   "devDependencies": {
     "@opencode/plugin": "2.3.0",

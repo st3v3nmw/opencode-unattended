@@ -11,7 +11,7 @@ import { ACTIONS, reviewedCounts, shellResolver, suggestAll, withoutUnresolved }
 const DAY_MS = 86_400_000
 const GLOBAL_CONFIG = join(homedir(), ".config", "opencode", "opencode.jsonc")
 
-const USAGE = `usage: bun run suggest [--since 7d] [--config PATH]... [--dir PATH] [--db PATH] [--no-history] [--min-uses N] [--action NAME]... [--json]
+const USAGE = `usage: opencode-unattended suggest [--since 7d] [--config PATH]... [--dir PATH] [--db PATH] [--no-history] [--min-uses N] [--action NAME]... [--json]
 
   --since       window start: 30d, 4w, 12h, or a date like 2026-11-01 (default 7d)
   --config      opencode config to read shell rules from, in order; repeat for several

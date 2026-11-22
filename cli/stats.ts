@@ -1,7 +1,7 @@
 import { DEFAULT_AUDIT_DIR, readEntries } from "../src/auditlog.ts"
 import { byJudge, formatActions, formatJudges, formatMonthly, monthly, parseWhen, summarize, top } from "../src/stats.ts"
 
-const USAGE = `usage: bun run stats [--since 180d] [--until DATE] [--project TEXT] [--top ask|deny|error] [--limit N] [--dir PATH]
+const USAGE = `usage: opencode-unattended stats [--since 180d] [--until DATE] [--project TEXT] [--top ask|deny|error] [--limit N] [--dir PATH]
 
   --since    window start: 30d, 4w, 12h, or a date like 2026-11-01 (default 180d)
   --until    window end, same forms (default now)

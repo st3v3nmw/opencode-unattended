@@ -28,3 +28,40 @@ your permission rules
 ```
 
 Every decision is written to a local audit log, and a small CLI turns the log into usage stats and suggests shell commands that could become permanent allow rules in your config.
+
+## Install
+
+Add the plugin to your opencode config, for example `~/.config/opencode/opencode.jsonc`. opencode fetches it from npm on the next start.
+
+```jsonc
+{
+  "plugin": [
+    [
+      "opencode-unattended",
+      { "judge": { "model": "anthropic/claude-haiku-5.5", "baseURL": "https://openrouter.ai/api/v1" } }
+    ]
+  ]
+}
+```
+
+The reviewer is any OpenAI-compatible chat completions endpoint. If `judge.model` or `judge.baseURL` is left out of the options, the plugin reads `OPENCODE_UNATTENDED_MODEL` and `OPENCODE_UNATTENDED_API_URL` instead; options win when both are set. The key comes from `OPENCODE_UNATTENDED_API_KEY` and can be omitted for a local server that needs none. With a required setting missing, the plugin still loads, and every request that reaches it goes to you.
+
+Other options:
+
+- `judge.timeout`: how long one review may take, as a duration such as `"30s"`.
+- `judge.promptCache`: `{ "ttl": "1h" }` asks the endpoint to cache the system prompt; `ttl` is `"5m"` or `"1h"`.
+- `escalateAfter`: how many requests in a row, or denies in a session, the reviewer may turn back before you are asked. Default 3.
+- `auditDir`: where the audit log goes, `~/.local/state/opencode-unattended` by default. `false` turns the log off, along with the rule-suggestion tool and skill that depend on it.
+
+The plugin and the CLI below run on Bun, which opencode already uses.
+
+## CLI
+
+```
+opencode-unattended stats [--since 180d] [--project TEXT] [--top ask|deny|error]
+opencode-unattended suggest [--since 7d] [--action NAME] [--json]
+```
+
+`stats` summarizes the audit log: how many requests your rules settled, how many the reviewer allowed, turned back or failed on, and how long it took. `suggest` reads the same log and your opencode config and lists shell commands, webfetch origins and searches the reviewer keeps allowing, as candidates for permanent allow rules. Both accept `--help` for the full option list.
+
+Install it with `bun add -g opencode-unattended`, which also provides the shorter `unattended` command, or run it once with `bunx opencode-unattended stats`.

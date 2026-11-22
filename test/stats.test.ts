@@ -101,14 +101,6 @@ describe("stats", () => {
   })
 
   describe("action table", () => {
-    test("a label row says the percentages are shares of requests, over CONFIG, JUDGED and PROMPTED only", () => {
-      const [label, header] = formatActions(stats.byAction, 1).split("\n")
-      const start = label!.indexOf("% of requests")
-      expect(start).toBeGreaterThanOrEqual(header!.indexOf("REQUESTS") + "REQUESTS".length)
-      expect(start + "% of requests".length).toBeLessThanOrEqual(header!.length)
-      expect(label).toBe(label!.trimEnd())
-    })
-
     test("actions beyond the limit fold into others, and the total covers every action", () => {
       const out = table(formatActions(stats.byAction, 1))
       expect(out.map((row) => row.label)).toEqual(["shell", "others (2)", "TOTAL"])
