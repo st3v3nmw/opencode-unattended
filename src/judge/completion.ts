@@ -1,19 +1,12 @@
 import { parseDuration } from "../duration.ts"
+import { API_KEY_ENV, hostOf, post, sleep } from "./http.ts"
 import {
-  JudgeUnavailable,
-  registerJudge,
   type Judge,
   type JudgeOptions,
   type Judgement,
   type Usage,
 } from "./judge.ts"
-import {
-  DEFAULT_MAX_TOKENS,
-  DEFAULT_TIMEOUT_MS,
-  MAX_RETRY_AFTER_MS,
-  MAX_RETRY_TIME_MS,
-  RETRY_DELAYS_MS,
-} from "./limits.ts"
+import { DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT_MS } from "./limits.ts"
 import { SYSTEM_PROMPT, renderRequest } from "./prompt.ts"
 import { VERDICTS, isVerdict } from "./judge.ts"
 
@@ -25,7 +18,7 @@ export interface PromptCache {
   ttl: string
 }
 
-export interface OpenAIOptions {
+export interface CompletionOptions {
   model: string
   baseURL: string
   timeoutMs: number
@@ -40,7 +33,7 @@ export interface OpenAIOptions {
 
 const CONFIG_KEYS = ["model", "baseURL"] as const
 type ConfigKey = (typeof CONFIG_KEYS)[number]
-type JudgeConfig = Pick<OpenAIOptions, ConfigKey> & Partial<Pick<OpenAIOptions, "timeoutMs" | "promptCache">>
+type JudgeConfig = Pick<CompletionOptions, ConfigKey> & Partial<Pick<CompletionOptions, "timeoutMs" | "promptCache">>
 
 /** One id for every call, so OpenRouter keeps routing them to the provider whose cache is warm. */
 export const CACHE_SESSION_ID = "opencode-unattended"
@@ -98,45 +91,8 @@ function usageOf(raw: RawUsage | undefined): Usage | undefined {
   }
 }
 
-/** Failures worth another try: the service is limited or struggling, not the request being wrong. */
-const transient = (status: number) => status === 429 || status >= 500
-
 export const endpoint = (baseURL: string) =>
   `${baseURL.trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "")}/chat/completions`
-
-/** The host and port of a base URL, without scheme, credentials, path or query. */
-export function hostOf(baseURL: string): string | undefined {
-  try {
-    return new URL(baseURL.trim()).host || undefined
-  } catch {
-    return undefined
-  }
-}
-
-export const API_KEY_ENV = "OPENCODE_UNATTENDED_API_KEY"
-
-/** A Retry-After value, in seconds or as an HTTP date, as milliseconds from now. */
-function retryAfterMs(header: string | null): number | undefined {
-  if (!header?.trim()) return undefined
-  const seconds = Number(header)
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
-  const date = Date.parse(header)
-  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now())
-}
-
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) return reject(signal.reason)
-    const onAbort = () => {
-      clearTimeout(timer)
-      reject(signal!.reason)
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort)
-      resolve()
-    }, ms)
-    signal?.addEventListener("abort", onAbort, { once: true })
-  })
 
 function promptCacheConfig(value: unknown): PromptCache {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -174,9 +130,9 @@ export function judgeConfig(options: JudgeOptions): JudgeConfig {
   return config
 }
 
-export function createOpenAIJudge(partial: Pick<OpenAIOptions, ConfigKey> & Partial<OpenAIOptions>): Judge {
+export function createCompletionJudge(partial: Pick<CompletionOptions, ConfigKey> & Partial<CompletionOptions>): Judge {
   const env = partial.env ?? process.env
-  const options: OpenAIOptions = {
+  const options: CompletionOptions = {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxTokens: DEFAULT_MAX_TOKENS,
     promptCache: { enabled: false, ttl: DEFAULT_CACHE_TTL },
@@ -209,41 +165,16 @@ export function createOpenAIJudge(partial: Pick<OpenAIOptions, ConfigKey> & Part
           { role: "user", content: renderRequest(request, context) },
         ],
       })
-      let spent = 0
-      let response: Response
-      for (let attempt = 0; ; attempt++) {
-        const started = options.now()
-        const timeout = AbortSignal.timeout(options.timeoutMs)
-        let failure: string
-        let retryAfter: number | undefined
-        try {
-          response = await options.fetch(endpoint(options.baseURL), {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
-            },
-            body: payload,
-            signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-          })
-          spent += options.now() - started
-          if (!transient(response.status)) break
-          failure = `judge HTTP ${response.status}`
-          retryAfter = retryAfterMs(response.headers.get("retry-after"))
-          await response.body?.cancel()
-        } catch (error) {
-          if (signal?.aborted) throw error
-          spent += options.now() - started
-          failure = timeout.aborted ? `judge timed out after ${options.timeoutMs / 1000}s` : `judge unreachable: ${error instanceof Error ? error.message : String(error)}`
-        }
-        if (attempt >= RETRY_DELAYS_MS.length) throw new JudgeUnavailable(failure)
-        const wait = retryAfter ?? RETRY_DELAYS_MS[attempt]!
-        if (wait > MAX_RETRY_AFTER_MS || spent + wait > MAX_RETRY_TIME_MS) {
-          throw new JudgeUnavailable(`${failure} (retry after ${Math.ceil(wait / 1000)}s)`)
-        }
-        spent += wait
-        await options.sleep(wait, signal)
-      }
+      const response = await post({
+        url: endpoint(options.baseURL),
+        headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+        body: payload,
+        timeoutMs: options.timeoutMs,
+        signal,
+        fetch: options.fetch,
+        sleep: options.sleep,
+        now: options.now,
+      })
       if (!response.ok) throw new Error(`judge HTTP ${response.status}`)
       const body = (await response.json()) as {
         choices?: { finish_reason?: unknown; message?: { content?: unknown; refusal?: unknown } }[]
@@ -266,5 +197,3 @@ export function createOpenAIJudge(partial: Pick<OpenAIOptions, ConfigKey> & Part
     },
   }
 }
-
-registerJudge("openai", (options: JudgeOptions) => createOpenAIJudge(judgeConfig(options)))

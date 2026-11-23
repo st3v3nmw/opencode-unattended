@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import {
   CACHE_SESSION_ID,
-  createOpenAIJudge,
+  createCompletionJudge,
   endpoint,
-  hostOf,
   judgeConfig,
   parseJudgement,
-} from "../../src/judge/openai.ts"
+} from "../../src/judge/completion.ts"
+import { hostOf } from "../../src/judge/http.ts"
 import { SYSTEM_PROMPT } from "../../src/judge/prompt.ts"
-import { JudgeUnavailable, createJudge } from "../../src/judge/judge.ts"
+import { JudgeUnavailable } from "../../src/judge/judge.ts"
 
 const KEY = "OPENCODE_UNATTENDED_API_KEY"
 
@@ -21,12 +21,12 @@ const reply = (content: unknown, status = 200) =>
 const judgeWith = (
   fetchImpl: typeof fetch,
   env: Env = FULL_ENV,
-  extra: Partial<Parameters<typeof createOpenAIJudge>[0]> = {},
-) => createOpenAIJudge({ model: "m", baseURL: "https://x.example/v1", env, fetch: fetchImpl, ...extra })
+  extra: Partial<Parameters<typeof createCompletionJudge>[0]> = {},
+) => createCompletionJudge({ model: "m", baseURL: "https://x.example/v1", env, fetch: fetchImpl, ...extra })
 
 const none = { recent: [], messages: [] }
 
-describe("openai judge", () => {
+describe("completion judge", () => {
   test("request has no temperature and carries command and context as JSON data", async () => {
     let body: Record<string, unknown> = {}
     let headers: Record<string, string> = {}
@@ -262,11 +262,6 @@ describe("judge options from config", () => {
     expect(sleeps).toEqual([15_000, 30_000, 60_000])
   })
 
-  test("the registered openai style validates through judgeConfig", () => {
-    expect(() => createJudge("openai", {})).toThrow("missing required options")
-    expect(createJudge("openai", FULL).id).toBe("a/b")
-  })
-
   test("no key is needed: without OPENCODE_UNATTENDED_API_KEY the call still goes out, with no authorization header", async () => {
     let headers: Record<string, string> = {}
     const spy = (async (_url: string, init: RequestInit) => {
@@ -290,7 +285,7 @@ describe("retries", () => {
   const limited = (retryAfter?: string, status = 429) => new Response("{}", { status, headers: retryAfter ? { "retry-after": retryAfter } : {} })
   const allow = () => reply('{"decision":"allow","reason":""}')
 
-  const run = (answers: (Response | Error)[], extra: Partial<Parameters<typeof createOpenAIJudge>[0]> = {}) => {
+  const run = (answers: (Response | Error)[], extra: Partial<Parameters<typeof createCompletionJudge>[0]> = {}) => {
     const sleeps: number[] = []
     const queue = [...answers]
     const fetchImpl = (async () => {

@@ -1,11 +1,9 @@
 import { DEFAULT_DATA_DIR } from "./audit/audit.ts"
 import type { JudgeOptions } from "./judge/judge.ts"
 
-export const DEFAULT_API_STYLE = "openai"
-
 export interface Settings {
-  apiStyle: string
-  /** Everything under `judge` except `apiStyle` and `escalateAfter`; the selected API style validates it. */
+  provider: string
+  /** Everything under `judge` except `provider` and `escalateAfter`; the selected provider validates it. */
   judge: JudgeOptions
   /** Requests in a row, or denies in a session, the judge may turn back before the next one goes to you. */
   escalateAfter: number
@@ -28,10 +26,15 @@ function integer(value: unknown, name: string, fallback: number, min: number): n
 
 export function parseOptions(raw: Raw): Settings {
   if (raw.judge !== undefined && !isRecord(raw.judge)) {
-    throw new Error(`judge must be an object with model and baseURL, not ${typeof raw.judge}`)
+    throw new Error(`judge must be an object with provider and model, not ${typeof raw.judge}`)
   }
-  const { apiStyle = DEFAULT_API_STYLE, escalateAfter, ...judge } = raw.judge ?? {}
-  if (typeof apiStyle !== "string" || !apiStyle) throw new Error("judge.apiStyle must be a non-empty string")
+  const { provider: named, apiStyle, escalateAfter, ...judge } = raw.judge ?? {}
+  // TODO: remove apiStyle, which provider replaces. "openai" was the one style, now called openai-compatible.
+  const provider = named ?? (apiStyle === "openai" ? "openai-compatible" : apiStyle)
+  if (provider === undefined) {
+    throw new Error('judge.provider is required, for example "openrouter", or "openai-compatible" with a judge.baseURL')
+  }
+  if (typeof provider !== "string" || !provider) throw new Error("judge.provider must be a non-empty string")
 
   if (raw.auditLog !== undefined && !isRecord(raw.auditLog)) {
     throw new Error('auditLog must be an object such as { "enabled": false }')
@@ -48,7 +51,7 @@ export function parseOptions(raw: Raw): Settings {
   if (typeof dataDir !== "string" || !dataDir) throw new Error("dataDir must be a directory path")
 
   return {
-    apiStyle,
+    provider,
     judge,
     // TODO: remove the top-level escalateAfter, which judge.escalateAfter replaces.
     escalateAfter: integer(escalateAfter ?? raw.escalateAfter, "judge.escalateAfter", 5, 1),

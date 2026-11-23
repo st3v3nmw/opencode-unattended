@@ -1,5 +1,5 @@
 import type { ApproverEntry, Effect, Reason } from "./audit/audit.ts"
-import { JudgeNotConfigured, JudgeUnavailable, type Judge, type JudgeContext, type Judgement, type Request } from "./judge/judge.ts"
+import { JudgeNotConfigured, JudgeUnavailable, scoreNote, type Judge, type JudgeContext, type Judgement, type Request } from "./judge/judge.ts"
 import { BREAKER_COOLDOWN_MS, MAX_TOOL_CALL_CHARS, MAX_TRACKED, SNIPPET_CHARS } from "./judge/limits.ts"
 
 export interface Review {
@@ -149,11 +149,12 @@ export function createApprover({
         }
         return { decision: "ask", message: `opencode-unattended could not review this ${noun}, so it is asking you: ${reason}` }
       }
-      const info = { ...consulted, latency: now() - started }
+      const note = judgement.reason || (judgement.score !== undefined ? scoreNote(judgement.score) : "")
+      const info = { ...consulted, latency: now() - started, ...entryFor({ why: note }) }
 
       if (judgement.verdict === "allow") {
         session.consecutiveDenies = 0
-        write("allow", { ...info, ...entryFor({ why: judgement.reason }) })
+        write("allow", info)
         return { decision: "allow" }
       }
 

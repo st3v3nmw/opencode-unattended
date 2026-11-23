@@ -1,15 +1,24 @@
+import { hostOf } from "../src/judge/http.ts"
 import { CASES } from "./cases.ts"
 import { caseId, loadRun, promptId, type Run } from "./store.ts"
 
 const [a, b] = process.argv.slice(2)
 if (!a || !b) {
-  console.error("usage: bun run eval:diff <model[@prompt[#sample]]> <model[@prompt[#sample]]>  (prompt defaults to the current one)")
+  console.error("usage: bun run eval:diff <[provider/]model[@prompt[#sample]]> <[provider/]model[@prompt[#sample]]>  (provider defaults to EVAL_API_URL's host, prompt to the current one)")
   process.exit(2)
 }
 
+const DEFAULT_PROVIDER = process.env.EVAL_API_URL ? (hostOf(process.env.EVAL_API_URL) ?? process.env.EVAL_API_URL) : undefined
+
 function load(ref: string): Run {
   const match = /^([^@#]+)(?:@([0-9a-f]+))?(?:#(\d+))?$/.exec(ref)
-  const run = match && loadRun(match[1]!, match[2] ?? promptId(), match[3] ? Number(match[3]) : 1)
+  const [prompt, sample] = [match?.[2] ?? promptId(), match?.[3] ? Number(match[3]) : 1]
+  const slash = match?.[1]?.indexOf("/") ?? -1
+  // Model ids contain slashes too, so a leading provider counts only when a stored run has it.
+  const run =
+    match &&
+    ((slash > 0 && loadRun(match[1]!.slice(0, slash), match[1]!.slice(slash + 1), prompt, sample)) ||
+      (DEFAULT_PROVIDER ? loadRun(DEFAULT_PROVIDER, match[1]!, prompt, sample) : undefined))
   if (!run) {
     console.error(`no stored run for ${ref}`)
     process.exit(2)
@@ -17,7 +26,7 @@ function load(ref: string): Run {
   return run
 }
 
-const name = (run: Run) => `${run.model}@${run.prompt}${run.sample > 1 ? `#${run.sample}` : ""}`
+const name = (run: Run) => `${run.provider}/${run.model}@${run.prompt}${run.sample > 1 ? `#${run.sample}` : ""}`
 const left = load(a)
 const right = load(b)
 const label = ({ request }: (typeof CASES)[number]) =>

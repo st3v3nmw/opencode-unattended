@@ -1,5 +1,7 @@
-import { JudgeNotConfigured, JudgeUnavailable } from "../src/judge/judge.ts"
-import { DEFAULT_CACHE_TTL, createOpenAIJudge, hostOf } from "../src/judge/openai.ts"
+import { JudgeNotConfigured, JudgeUnavailable, scoreNote } from "../src/judge/judge.ts"
+import { DEFAULT_CACHE_TTL, createCompletionJudge } from "../src/judge/completion.ts"
+import { createDecisionJudge } from "../src/judge/decision.ts"
+import { hostOf } from "../src/judge/http.ts"
 import { VERDICTS } from "../src/judge/judge.ts"
 import { CASES, type Case } from "./cases.ts"
 import { caseId, dollars, emptyRun, loadRun, nextSample, saveRun, score, type Price, type Run } from "./store.ts"
@@ -27,6 +29,13 @@ const promptCache = flags.has("--cache")
 const API_URL = process.env.EVAL_API_URL ?? ""
 if (!API_URL) {
   console.error("set EVAL_API_URL to an OpenAI-compatible base URL, such as https://openrouter.ai/api/v1")
+  process.exit(1)
+}
+const PROVIDER = hostOf(API_URL) ?? API_URL
+// `decision` runs models that score instead of write, which need the decisions endpoint: https://openrouter.ai/api/alpha
+const MODALITY = process.env.EVAL_MODALITY ?? "completion"
+if (MODALITY !== "completion" && MODALITY !== "decision") {
+  console.error('EVAL_MODALITY must be "completion" or "decision"')
   process.exit(1)
 }
 
@@ -62,7 +71,10 @@ async function prices(): Promise<Map<string, Price>> {
 
 /** Calls the model for each case without an outcome, saving after every one. Returns false if it gave up. */
 async function fill(run: Run, todo: Case[]): Promise<boolean> {
-  const judge = createOpenAIJudge({ model: run.model, baseURL: API_URL, promptCache: { enabled: promptCache, ttl: DEFAULT_CACHE_TTL } })
+  const judge =
+    MODALITY === "decision"
+      ? createDecisionJudge({ model: run.model, baseURL: API_URL })
+      : createCompletionJudge({ model: run.model, baseURL: API_URL, promptCache: { enabled: promptCache, ttl: DEFAULT_CACHE_TTL } })
   let next = 0
   let done = 0
   let streak = 0
@@ -72,8 +84,8 @@ async function fill(run: Run, todo: Case[]): Promise<boolean> {
       const testCase = todo[next++]!
       const started = Date.now()
       try {
-        const { verdict, reason, usage } = await judge.decide(testCase.request, { ...none, ...testCase.context })
-        run.outcomes[caseId(testCase)] = { verdict, reason, ms: Date.now() - started, ...(usage ? { usage } : {}) }
+        const { verdict, reason, score, usage } = await judge.decide(testCase.request, { ...none, ...testCase.context })
+        run.outcomes[caseId(testCase)] = { verdict, reason: reason || (score !== undefined ? scoreNote(score) : ""), ms: Date.now() - started, ...(usage ? { usage } : {}) }
         streak = 0
       } catch (error) {
         const message = String(error instanceof Error ? error.message : error)
@@ -99,8 +111,8 @@ function report(run: Run, cached: boolean) {
     const outcome = run.outcomes[caseId(testCase)]
     return outcome ? [{ testCase, outcome }] : []
   })
-  console.log(`\n== ${run.model}  prompt ${run.prompt}${run.sample > 1 ? ` sample ${run.sample}` : ""}  ${cached ? "stored" : "ran"} ${run.updated.slice(0, 16)} ==`)
-  console.log(`exact ${s.exact}/${s.covered} of ${CASES.length}  false allows ${s.falseAllows}  false denies ${s.falseDenies}  errors ${s.errors}`)
+  console.log(`\n== ${run.provider}  ${run.model}  prompt ${run.prompt}${run.sample > 1 ? ` sample ${run.sample}` : ""}  ${cached ? "stored" : "ran"} ${run.updated.slice(0, 16)} ==`)
+  console.log(`exact ${s.exact}/${s.covered} of ${CASES.length}  wrongly allowed ${s.wronglyAllowed}  wrongly denied ${s.wronglyDenied}  errors ${s.errors}`)
   console.log(`latency p50 ${s.p50}ms  p95 ${s.p95}ms`)
   console.log(
     `tokens per call ${Math.round(s.promptTokens)} in, ${Math.round(s.completionTokens)} out (${Math.round(s.reasoningTokens)} reasoning)  ${Math.round(s.cachedShare * 100)}% cached  cost per 1000 calls ${dollars(s.costPer1000)}${s.costSource ? ` (${s.costSource})` : ""}`,
@@ -111,25 +123,25 @@ function report(run: Run, cached: boolean) {
     console.log([expected, ...row].join("\t"))
   }
   const why = (r: { outcome: { reason: string } }) => (r.outcome.reason ? `  -> ${r.outcome.reason}` : "")
-  for (const r of rows.filter((r) => r.testCase.expected === "deny" && r.outcome.verdict === "allow")) console.log(`FALSE ALLOW  ${label(r.testCase)}${why(r)}`)
-  for (const r of rows.filter((r) => r.testCase.expected === "allow" && r.outcome.verdict === "deny")) console.log(`FALSE DENY   ${label(r.testCase)}${why(r)}`)
+  for (const r of rows.filter((r) => r.testCase.expected === "deny" && r.outcome.verdict === "allow")) console.log(`WRONGLY ALLOWED  ${label(r.testCase)}${why(r)}`)
+  for (const r of rows.filter((r) => r.testCase.expected === "allow" && r.outcome.verdict === "deny")) console.log(`WRONGLY DENIED   ${label(r.testCase)}${why(r)}`)
   for (const r of rows.filter((r) => r.outcome.verdict === "error")) console.log(`error        ${label(r.testCase)}  ${r.outcome.error}`)
-  return s.falseAllows
+  return s.wronglyAllowed
 }
 
 const list = await prices()
 const sha = commit()
-let falseAllows = 0
+let wronglyAllowed = 0
 let ranBefore = false
 for (const model of models) {
-  const run = (fresh ? undefined : loadRun(model)) ?? emptyRun(model, sha, fresh ? nextSample(model) : 1, list.get(model))
+  const run = (fresh ? undefined : loadRun(PROVIDER, model)) ?? emptyRun(PROVIDER, model, sha, fresh ? nextSample(PROVIDER, model) : 1, list.get(model))
   if (!run.price && list.has(model)) run.price = list.get(model)
   const todo = CASES.filter((testCase) => {
     const outcome = run.outcomes[caseId(testCase)]
     return !outcome || (retryErrors && outcome.verdict === "error")
   })
   if (todo.length === 0) {
-    falseAllows += report(run, true)
+    wronglyAllowed += report(run, true)
     continue
   }
   if (ranBefore && COOLDOWN_S > 0) {
@@ -139,7 +151,7 @@ for (const model of models) {
   ranBefore = true
   log(`${model}: ${todo.length} cases to run, ${CASES.length - todo.length} stored`)
   await fill(run, todo)
-  falseAllows += report(run, false)
+  wronglyAllowed += report(run, false)
 }
 
-process.exit(falseAllows > 0 ? 1 : 0)
+process.exit(wronglyAllowed > 0 ? 1 : 0)

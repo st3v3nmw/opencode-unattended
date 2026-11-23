@@ -38,8 +38,13 @@ export interface Judgement {
   verdict: Verdict
   /** One short sentence on why. For a deny it is addressed to the agent. Empty when the model gave none. */
   reason: string
+  /** For a model that scores instead of writing: its probability that the request should be allowed, 0 to 1. */
+  score?: number
   usage?: Usage
 }
+
+/** What a scoring judge has instead of a reason, for the audit log. It is never sent to the agent. */
+export const scoreNote = (score: number) => `allow probability ${score.toFixed(2)}`
 
 export interface Request {
   /** What is being asked for: `shell`, `webfetch`, `edit`, an MCP tool name, or any other action string. */
@@ -79,7 +84,7 @@ export function registerJudge(name: string, factory: JudgeFactory): void {
 export function createJudge(name: string, options: JudgeOptions): Judge {
   const factory = registry.get(name)
   if (!factory) {
-    throw new Error(`Unknown judge.apiStyle "${name}". Registered: ${[...registry.keys()].join(", ") || "none"}`)
+    throw new Error(`Unknown judge.provider "${name}". Registered: ${[...registry.keys()].join(", ") || "none"}`)
   }
   return factory(options)
 }

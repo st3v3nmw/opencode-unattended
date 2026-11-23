@@ -5,25 +5,26 @@ const currentOnly = process.argv.includes("--current")
 const current = promptId()
 const runs = allRuns()
   .filter((run) => !currentOnly || run.prompt === current)
-  .sort((a, b) => a.model.localeCompare(b.model) || b.updated.localeCompare(a.updated))
+  .sort((a, b) => a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model) || b.updated.localeCompare(a.updated))
 
 if (runs.length === 0) {
   console.log("no stored runs; `bun run eval` creates them")
   process.exit(0)
 }
 
-const header = ["model", "prompt", "n", "date", "commit", "exact", "FA", "FD", "err", "p50", "p95", "tok in/out", "cached", "$/1000"]
+const header = ["provider", "model", "prompt", "n", "date", "commit", "exact", "WA", "WD", "err", "p50", "p95", "tok in/out", "cached", "$/1000"]
 const rows = runs.map((run) => {
   const s = score(run, CASES)
   return [
+    run.provider,
     run.model,
     `${run.prompt}${run.prompt === current ? "*" : ""}${run.sample > 1 ? `#${run.sample}` : ""}`,
     `${s.covered}/${CASES.length}`,
     run.updated.slice(0, 10),
     run.commit,
     String(s.exact),
-    String(s.falseAllows),
-    String(s.falseDenies),
+    String(s.wronglyAllowed),
+    String(s.wronglyDenied),
     String(s.errors),
     `${s.p50}ms`,
     `${s.p95}ms`,
@@ -36,4 +37,4 @@ const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.
 const line = (cells: string[]) => cells.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd()
 console.log(line(header))
 for (const row of rows) console.log(line(row))
-console.log(`\n* current prompt, #n a later sample, FA false allows, FD false denies, ~ cost from list price, not billed`)
+console.log(`\n* current prompt, #n a later sample, WA wrongly allowed, WD wrongly denied, ~ cost from list price, not billed`)

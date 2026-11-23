@@ -288,6 +288,13 @@ describe("audit", () => {
     expect(entry).toMatchObject({ effect: "allow", by: "judge", why: "Read-only listing of the project." })
   })
 
+  test("a judge that scores has its probability recorded as the reason, and the agent is not sent it", async () => {
+    expect(await run({ verdict: "deny", reason: "", score: 0.04 }, ["rm -rf /"])).toMatchObject({ effect: "deny", by: "judge", why: "allow probability 0.04" })
+    expect(await run({ verdict: "allow", reason: "", score: 0.93 }, ["ls"])).toMatchObject({ effect: "allow", why: "allow probability 0.93" })
+    const { approver } = setup({ verdict: "deny", reason: "", score: 0.04 })
+    expect((await approver.review("s", shell("rm -rf /"))).message).toBe(`This is not something to do unattended. ${SUFFIX}`)
+  })
+
   test("a deny is recorded with the judge's reason", async () => {
     const entry = await run({ verdict: "deny", reason: "Too destructive." }, ["rm -rf /"])
     expect(entry).toMatchObject({ effect: "deny", by: "judge", judge: "fake", why: "Too destructive." })

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { Usage } from "../src/judge/judge.ts"
-import { RESPONSE_FORMAT } from "../src/judge/openai.ts"
+import { RESPONSE_FORMAT } from "../src/judge/completion.ts"
 import { DEFAULT_MAX_TOKENS } from "../src/judge/limits.ts"
 import { SYSTEM_PROMPT, renderRequest } from "../src/judge/prompt.ts"
 import type { Verdict } from "../src/judge/judge.ts"
@@ -38,6 +38,8 @@ export interface Price {
 }
 
 export interface Run {
+  /** The host the model was called through, such as `openrouter.ai`. The same model can behave differently on another. */
+  provider: string
   model: string
   prompt: string
   /** 1 for the first run of this model on this prompt; later samples come from `--fresh`, since answers vary between runs. */
@@ -51,36 +53,37 @@ export interface Run {
 }
 
 const slug = (model: string) => model.replace(/[^\w.-]+/g, "_")
-const fileOf = (model: string, prompt: string, sample: number) =>
-  join(RESULTS_DIR, slug(model), sample === 1 ? `${prompt}.json` : `${prompt}.s${sample}.json`)
+const fileOf = (provider: string, model: string, prompt: string, sample: number) =>
+  join(RESULTS_DIR, slug(provider), slug(model), sample === 1 ? `${prompt}.json` : `${prompt}.s${sample}.json`)
 
-export function emptyRun(model: string, commit: string, sample = 1, price?: Price): Run {
+export function emptyRun(provider: string, model: string, commit: string, sample = 1, price?: Price): Run {
   const now = new Date().toISOString()
-  return { model, prompt: promptId(), sample, maxTokens: DEFAULT_MAX_TOKENS, commit, started: now, updated: now, ...(price ? { price } : {}), outcomes: {} }
+  return { provider, model, prompt: promptId(), sample, maxTokens: DEFAULT_MAX_TOKENS, commit, started: now, updated: now, ...(price ? { price } : {}), outcomes: {} }
 }
 
 /** Runs from before the judge answered only allow or deny stored `ask`, which held a request back too. */
-function read(file: string): Run {
+function read(file: string, provider: string): Run {
   const run = JSON.parse(readFileSync(file, "utf8")) as Run
+  run.provider ??= provider
   for (const outcome of Object.values(run.outcomes)) if ((outcome.verdict as string) === "ask") outcome.verdict = "deny"
   return run
 }
 
-export function loadRun(model: string, prompt = promptId(), sample = 1): Run | undefined {
-  const file = fileOf(model, prompt, sample)
-  return existsSync(file) ? read(file) : undefined
+export function loadRun(provider: string, model: string, prompt = promptId(), sample = 1): Run | undefined {
+  const file = fileOf(provider, model, prompt, sample)
+  return existsSync(file) ? read(file, provider) : undefined
 }
 
-export function nextSample(model: string, prompt = promptId()): number {
+export function nextSample(provider: string, model: string, prompt = promptId()): number {
   let sample = 1
-  while (existsSync(fileOf(model, prompt, sample))) sample++
+  while (existsSync(fileOf(provider, model, prompt, sample))) sample++
   return sample
 }
 
 /** Written after every case, so an interrupted run loses nothing. The prompt text is kept beside it, once per version. */
 export function saveRun(run: Run): void {
   run.updated = new Date().toISOString()
-  const file = fileOf(run.model, run.prompt, run.sample)
+  const file = fileOf(run.provider, run.model, run.prompt, run.sample)
   mkdirSync(join(file, ".."), { recursive: true })
   const prompts = join(RESULTS_DIR, "prompts")
   mkdirSync(prompts, { recursive: true })
@@ -91,21 +94,23 @@ export function saveRun(run: Run): void {
 }
 
 export function allRuns(): Run[] {
-  if (!existsSync(RESULTS_DIR)) return []
-  return readdirSync(RESULTS_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== "prompts")
-    .flatMap((dir) =>
-      readdirSync(join(RESULTS_DIR, dir.name))
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => read(join(RESULTS_DIR, dir.name, name))),
+  const dirs = (path: string) => (existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter((entry) => entry.isDirectory()) : [])
+  return dirs(RESULTS_DIR)
+    .filter((provider) => provider.name !== "prompts")
+    .flatMap((provider) =>
+      dirs(join(RESULTS_DIR, provider.name)).flatMap((model) =>
+        readdirSync(join(RESULTS_DIR, provider.name, model.name))
+          .filter((name) => name.endsWith(".json"))
+          .map((name) => read(join(RESULTS_DIR, provider.name, model.name, name), provider.name)),
+      ),
     )
 }
 
 export interface Score {
   covered: number
   exact: number
-  falseAllows: number
-  falseDenies: number
+  wronglyAllowed: number
+  wronglyDenied: number
   errors: number
   p50: number
   p95: number
@@ -136,8 +141,8 @@ export function score(run: Run, cases: Case[]): Score {
   return {
     covered: rows.length,
     exact: rows.filter((r) => r.outcome.verdict === r.expected).length,
-    falseAllows: rows.filter((r) => r.expected === "deny" && r.outcome.verdict === "allow").length,
-    falseDenies: rows.filter((r) => r.expected === "allow" && r.outcome.verdict === "deny").length,
+    wronglyAllowed: rows.filter((r) => r.expected === "deny" && r.outcome.verdict === "allow").length,
+    wronglyDenied: rows.filter((r) => r.expected === "allow" && r.outcome.verdict === "deny").length,
     errors: rows.filter((r) => r.outcome.verdict === "error").length,
     p50: pct(0.5),
     p95: pct(0.95),

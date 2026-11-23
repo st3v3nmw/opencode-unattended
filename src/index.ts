@@ -3,7 +3,7 @@ import { createApprover } from "./approver.ts"
 import { createWriter, prune, readEntries, type ApproverEntry } from "./audit/audit.ts"
 import { recentCommands } from "./suggest/history.ts"
 import { createJudge, type Judge, type Request } from "./judge/judge.ts"
-import "./judge/openai.ts"
+import "./judge/providers.ts"
 import { lastUserMessages, recentToolCalls } from "./judge/context.ts"
 import { MAX_TRACKED, RECENT_TOOL_CALLS, RECENT_TOOL_CALL_CHARS, USER_MESSAGES, USER_MESSAGE_CHARS } from "./judge/limits.ts"
 
@@ -18,7 +18,7 @@ export default Plugin.define({
     let judge: Judge
     try {
       settings = parseOptions(ctx.options)
-      judge = createJudge(settings.apiStyle, settings.judge)
+      judge = createJudge(settings.provider, settings.judge)
     } catch (error) {
       throw new Error(`opencode-unattended: ${error instanceof Error ? error.message : String(error)}`)
     }

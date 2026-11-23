@@ -38,7 +38,7 @@ async function load(table: Record<string, string>, { options = {}, sessionMessag
   const toolHooks: Record<string, (event: unknown) => void> = {}
   const registered: string[] = []
   const ctx = {
-    options: { judge: { apiStyle: "table", table }, auditLog: { enabled: false }, ...options },
+    options: { judge: { provider: "table", table }, auditLog: { enabled: false }, ...options },
     location: { directory: "/work/app", project: { id: "proj-1" } },
     permission: {
       hook: async (_name: string, cb: typeof evaluate) => {
@@ -221,14 +221,18 @@ describe("non-shell requests", () => {
 describe("plugin setup", () => {
   const setup = (options: Record<string, unknown>) => plugin.setup({ options } as never)
 
-  test("refuses to load without the required judge options, naming them", async () => {
-    await expect(setup({})).rejects.toThrow(
+  test("refuses to load without a provider, or without the options the provider needs, naming them", async () => {
+    await expect(setup({})).rejects.toThrow("opencode-unattended: judge.provider is required")
+    await expect(setup({ judge: { provider: "openrouter" } })).rejects.toThrow(
+      "opencode-unattended: missing required options: judge.model",
+    )
+    await expect(setup({ judge: { provider: "openai-compatible" } })).rejects.toThrow(
       "opencode-unattended: missing required options: judge.model, judge.baseURL",
     )
   })
 
-  test("refuses an unregistered API style", async () => {
-    await expect(setup({ judge: { apiStyle: "nope" } })).rejects.toThrow('Unknown judge.apiStyle "nope"')
+  test("refuses an unregistered provider", async () => {
+    await expect(setup({ judge: { provider: "nope" } })).rejects.toThrow('Unknown judge.provider "nope"')
   })
 })
 

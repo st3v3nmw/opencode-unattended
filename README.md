@@ -16,8 +16,8 @@ Add the plugin to your OpenCode config, for example `~/.config/opencode/opencode
       "package": "opencode-unattended",
       "options": {
         "judge": {
-          "model": "anthropic/claude-haiku-5.5",
-          "baseURL": "https://openrouter.ai/api/v1"
+          "provider": "openrouter",
+          "model": "anthropic/claude-haiku-5.5"
         }
       }
     }
@@ -25,7 +25,7 @@ Add the plugin to your OpenCode config, for example `~/.config/opencode/opencode
 }
 ```
 
-The reviewer is any OpenAI-compatible chat completions endpoint. `judge.model` and `judge.baseURL` are required. Without them the plugin fails to load. The key comes from the `OPENCODE_UNATTENDED_API_KEY` environment variable and can be left out for a local server that needs none.
+The reviewer is a model reached through `judge.provider`, and `judge.provider` and `judge.model` are required. Without them the plugin fails to load. `openrouter` needs nothing else. For any other OpenAI-compatible chat completions endpoint, such as a local llama.cpp or Ollama server, use `"provider": "openai-compatible"` and add `judge.baseURL`. The key comes from the `OPENCODE_UNATTENDED_API_KEY` environment variable and can be left out for a local server that needs none.
 
 The reviewer only sees requests that end in `ask`, so send `shell`, `webfetch` and `external_directory` to it by default and add `allow` and `deny` rules for what you already know. The last matching rule wins, so exceptions follow the broad rule:
 
@@ -107,6 +107,7 @@ The bundled `suggest-allow-rules` skill does that review for you. Ask your agent
 
 ## Options
 
+- `judge.modality`: `completion` (the default) for a model that writes its answer, or `decision` for one that scores yes/no questions, such as `typesafe/jev-1.14` on `openrouter`. A decision model returns a probability and no text, so the audit log records its score and a denied request goes back to the agent without a reason. It allows at 0.5 or above. `promptCache` doesn't apply to it.
 - `judge.timeout`: how long one review may take. Default `"30s"`.
 - `judge.promptCache`: set to `{ "ttl": "1h" }` to have the endpoint cache the system prompt. `ttl` is a duration, and the provider decides which ones it accepts. Off unless set.
 - `judge.escalateAfter`: how many requests in a row the reviewer may deny before you are asked. An allow starts the count again. Default 5.

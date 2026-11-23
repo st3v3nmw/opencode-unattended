@@ -34,7 +34,7 @@ export interface AuditEntry {
   /** Milliseconds the judge took, when it was consulted. */
   latency?: number
   reason?: Reason
-  /** The judge's one-sentence reason. For a deny it is what the agent was told. */
+  /** The judge's one-sentence reason, or for a judge that scores, its probability of allow. For a deny with a reason it is what the agent was told. */
   why?: string
   /** The failure message, for `reason: "error"` only. */
   error?: string
