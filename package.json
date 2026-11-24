@@ -1,6 +1,6 @@
 {
   "name": "opencode-unattended",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Automated permission approval for OpenCode, so your agent keeps working while you're away.",
   "keywords": ["opencode", "opencode-plugin", "ai-agents", "ai-safety", "developer-tools", "permissions"],
   "type": "module",

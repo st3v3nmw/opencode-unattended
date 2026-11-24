@@ -141,12 +141,6 @@ describe("suggestAll", () => {
     const noteOf = (command: string, rules: ActionRule[] = denied) =>
       suggestAll(shelled(command), [], rules).find((c) => c.action === "shell")?.note
 
-    test("an option before the subcommand is flagged, because rules written for the subcommand do not see it", () => {
-      expect(noteOf("git -C app log")).toContain("An option comes before the subcommand")
-      expect(noteOf("git --no-pager log")).toContain("An option comes before the subcommand")
-      expect(noteOf("git log --oneline")).toBeUndefined()
-    })
-
     test("ask and deny rules that start the same way are named", () => {
       expect(noteOf("git branch -a --contains HEAD")).toContain("Ask or deny rules nearby: `git branch -D *`")
       expect(noteOf("git status -s")).toBeUndefined()

@@ -1,6 +1,6 @@
 import type { AuditEntry } from "../audit/audit.ts"
 import { isSpecific, lastMatch, matches, rulesFor, type ActionRule, type ShellRule } from "./rules.ts"
-import { MAX_EXAMPLES, MIN_USES, MULTIPLEXERS, shorten, suggest, type Candidate } from "./suggest.ts"
+import { MAX_EXAMPLES, MIN_USES, shorten, suggest, type Candidate } from "./suggest.ts"
 
 export const ACTIONS = ["shell", "webfetch"] as const
 
@@ -114,11 +114,6 @@ const words = (rule: string) => rule.split(" ").filter(Boolean)
 function shellNotes(pattern: string, rules: readonly ShellRule[]): string[] {
   const rule = words(pattern.replace(/ \*$/, ""))
   const notes: string[] = []
-  if (MULTIPLEXERS.has(rule[0] ?? "") && rule[1]?.startsWith("-")) {
-    notes.push(
-      `An option comes before the subcommand, so ask and deny rules written as \`${rule[0]} <subcommand> *\` do not match commands under this rule. Check whether \`*\` can stand for the subcommand.`,
-    )
-  }
   const lead = rule.slice(0, 2)
   const related = rules
     .filter((r) => r.effect !== "allow" && isSpecific(r))
